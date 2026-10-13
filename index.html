@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'">
+<meta name="theme-color" content="#ffffff">
+<title>Task Manager</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <nav class="side" id="side" aria-label="Project 필터"></nav>
+
+  <div class="main">
+    <header class="top">
+      <h1>Task Manager</h1>
+      <span class="sync" id="syncLabel">이 기기에 저장됨</span>
+      <button class="icbtn only-narrow" data-act="settings" aria-label="설정">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h9M18 8h1M5 16h1M10 16h9"/><circle cx="16" cy="8" r="2"/><circle cx="8" cy="16" r="2"/></svg>
+      </button>
+    </header>
+    <div class="chips only-narrow" id="chips" role="toolbar" aria-label="Project 필터"></div>
+    <div class="bar">
+      <span class="sortlbl">마감일 ↑</span>
+      <button class="sw" id="swHide" role="switch" aria-checked="true"><i></i>완료/취소 숨김</button>
+    </div>
+    <section class="list" id="list" aria-label="Task 목록"></section>
+    <form class="quick" id="quick" autocomplete="off">
+      <input id="quickInput" aria-label="새 Task 제목" placeholder="Task 추가" maxlength="200">
+      <button type="submit" class="fab" aria-label="Task 추가">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </form>
+  </div>
+
+  <aside class="panel" id="panel" aria-label="Task 편집"></aside>
+  <div class="backdrop" id="backdrop"></div>
+</div>
+
+<div id="menuRoot"></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<dialog id="dlg"></dialog>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
