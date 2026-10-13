@@ -6,7 +6,8 @@ const wide = () => matchMedia('(min-width:700px)').matches;
 
 let doc;
 const DEFAULT_Q = { text: '', statuses: [], urgencies: [], due: 'any', sort: 'due', dir: 'asc', group: 'none', hideDone: true };
-const ui = { filter: 'all', selectedId: null, viewsOpen: true };
+const ui = { filter: 'all', selectedId: null, viewsOpen: true, railOpen: false };
+function setRail(v) { ui.railOpen = v; document.querySelector('.app').classList.toggle('rail-open', v); renderSide(); }
 let q = { ...DEFAULT_Q };
 const SORT_LABEL = { due: '마감일', start: '시작일', urgency: '긴급도', created: '생성일', title: '제목' };
 const GROUP_LABEL = { none: '없음', project: 'Project', urgency: '긴급도', status: '상태', due: '마감' };
@@ -36,6 +37,7 @@ const P = {
   chev: '<path d="M7 10l5 5 5-5"/>',
   trash: '<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12M10.5 11v5M13.5 11v5"/>',
   copy: '<rect x="8.5" y="8.5" width="10" height="10" rx="2"/><path d="M5.5 14.5V7a2 2 0 012-2h7"/>',
+  menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
   list: '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>',
   cal: '<rect x="4" y="5.5" width="16" height="14" rx="2.5"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/>',
   gear: '<path d="M5 8h9M18 8h1M5 16h1M10 16h9"/><circle cx="16" cy="8" r="2"/><circle cx="8" cy="16" r="2"/>',
@@ -207,7 +209,7 @@ function renderSide() {
   if (count('none') || ui.filter === 'none') items.push({ v: 'none', name: '미분류' });
   const lead = it => it.icon || `<span class="dot" style="background:${it.color ? esc(it.color) : '#9AA1B1'}"></span>`;
   $('#chips').innerHTML = items.map(it => `<button class="chip" data-act="filter" data-v="${it.v}" aria-pressed="${ui.filter === it.v}">${it.icon ? '' : lead(it)}${esc(it.name)} <span class="n">${count(it.v)}</span></button>`).join('');
-  $('#side').innerHTML = `<h3>Project</h3>` +
+  $('#side').innerHTML = `<button class="nav rail-toggle" data-act="rail-toggle" aria-expanded="${ui.railOpen}" title="메뉴 펼치기/접기">${ic('menu')}<span class="lbl">접기</span></button><h3>Project</h3>` +
     items.map(it => `<button class="nav" data-act="filter" data-v="${it.v}" aria-pressed="${ui.filter === it.v}" title="${esc(it.name)}">${lead(it)}<span class="lbl">${esc(it.name)}</span><span class="n">${count(it.v)}</span></button>`).join('') +
     `<button class="vh" data-act="toggle-views" aria-expanded="${ui.viewsOpen}">${ic('chev')}저장된 뷰</button>` +
     (ui.viewsOpen ? ((doc.views || []).filter(v => !v.deleted_at).map(v => `<button class="nav vh-item" data-act="apply-view" data-id="${v.id}" title="${esc(v.name)}"><span class="lbl">${esc(v.name)}</span></button>`).join('') || '<span class="hint" style="margin:0 10px">저장된 뷰 없음</span>') : '') +
@@ -403,7 +405,8 @@ document.addEventListener('click', async e => {
   const t = id ? taskById(id) : null;
 
   switch (act) {
-    case 'filter': ui.filter = el.dataset.v; savePrefs(); renderSide(); renderList(); break;
+    case 'filter': ui.filter = el.dataset.v; savePrefs(); setRail(false); renderList(); break;
+    case 'rail-toggle': setRail(!ui.railOpen); break;
     case 'open':
       ui.selectedId = id; renderPanel(); renderList(); break;
     case 'close-panel': closePanel(); break;
@@ -466,13 +469,14 @@ document.addEventListener('click', async e => {
       break;
     }
     case 'settings': {
+      if (ui.railOpen) setRail(false);
       openDlg('settings', '설정', settingsHtml());
       if (settingsHtml.persisted === undefined && navigator.storage?.persisted) {
         navigator.storage.persisted().then(v => { settingsHtml.persisted = v; if (dlg.dataset.kind === 'settings') dlg.querySelector('.dlg-b').innerHTML = settingsHtml(); });
       }
       break;
     }
-    case 'projects': openDlg('projects', 'Project 관리', projectsHtml()); break;
+    case 'projects': if (ui.railOpen) setRail(false); openDlg('projects', 'Project 관리', projectsHtml()); break;
     case 'archive': {
       const p = doc.projects.find(x => x.id === id);
       if (!p) break;
@@ -505,7 +509,7 @@ document.addEventListener('click', async e => {
     case 'q-hide': q.hideDone = !q.hideDone; refreshFilter(); break;
     case 'q-reset': q = { ...DEFAULT_Q }; ui.filter = 'all'; refreshFilter(); break;
     case 'toggle-views': ui.viewsOpen = !ui.viewsOpen; savePrefs(); renderSide(); break;
-    case 'apply-view': { const v = (doc.views || []).find(x => x.id === id && !x.deleted_at); if (v) { applyView(v); if (dlg.open && dlg.dataset.kind === 'filter') dlg.close(); } break; }
+    case 'apply-view': { setRail(false); const v = (doc.views || []).find(x => x.id === id && !x.deleted_at); if (v) { applyView(v); if (dlg.open && dlg.dataset.kind === 'filter') dlg.close(); } break; }
     case 'del-view': {
       const v = (doc.views || []).find(x => x.id === id);
       if (v) { v.deleted_at = new Date().toISOString(); v.updated_at = v.deleted_at; persist(); refreshFilter(); }
@@ -514,6 +518,7 @@ document.addEventListener('click', async e => {
   }
 });
 
+document.addEventListener('pointerdown', e => { if (ui.railOpen && !e.target.closest('#side')) setRail(false); });
 $('#backdrop').addEventListener('click', closePanel);
 $('#swHide').addEventListener('click', () => { q.hideDone = !q.hideDone; savePrefs(); renderList(); });
 

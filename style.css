@@ -143,6 +143,23 @@ dialog[data-kind="filter"][open]{display:flex}
   dialog[data-kind="filter"]{margin:auto 0 0;width:100%;max-width:none;border-radius:20px 20px 0 0;max-height:90dvh}
 }
 
+/* ---------- 레일 임시 펼치기 (700~1099px) ---------- */
+.side .rail-toggle{display:none}
+@media (min-width:700px) and (max-width:1099px){
+  .side .rail-toggle{display:flex}
+  .app.rail-open .side{position:fixed;left:0;top:0;bottom:0;width:240px;z-index:30;padding:12px;box-shadow:4px 0 24px rgba(20,24,34,.18)}
+  .app.rail-open .main{margin-left:64px}
+  .app.rail-open .side h3{display:block;margin:8px 0 8px 10px;font-size:12px;font-weight:700;color:var(--muted)}
+  .app.rail-open .side .nav{justify-content:flex-start;padding:0 10px}
+  .app.rail-open .side .nav .lbl{display:inline;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .app.rail-open .side .nav .n{display:inline;font-size:12px;color:var(--muted)}
+  .app.rail-open .side .vh{display:flex;align-items:center;gap:6px;margin:12px 0 4px 10px;border:0;background:none;padding:0;height:32px;font-size:12px;font-weight:700;color:var(--muted)}
+  .app.rail-open .side .vh .ic{width:14px;height:14px}
+  .app.rail-open .side .vh-item{display:flex}
+  .app.rail-open .side .hint{display:block}
+}
+@media (min-width:1100px){.side .rail-toggle{display:none}}
+
 /* ---------- 유틸 ---------- */
 .only-narrow{display:flex}
 
