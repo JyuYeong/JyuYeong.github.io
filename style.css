@@ -124,6 +124,25 @@ dialog::backdrop{background:rgba(20,24,34,.45)}
 .prow .in{flex:1;min-width:0}
 .prow.arch .in{color:var(--muted);text-decoration:line-through}
 
+/* ---------- M2: 필터·정렬·그룹·뷰 ---------- */
+.bar .btn{height:40px}
+.cnt{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;border-radius:10px;background:var(--accent);color:#fff;font-size:12px;font-weight:700}
+.gh{display:flex;align-items:center;gap:8px;margin:8px 2px -2px;font-size:12.5px;font-weight:700;color:var(--muted)}
+.gh .n{font-weight:500}
+.gh:first-child{margin-top:0}
+.chips2{display:flex;flex-wrap:wrap;gap:8px}
+.chips2 .chip{height:38px}
+.chips2 .chip[aria-pressed="true"]{background:var(--accent-weak);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+.fsec{display:flex;flex-direction:column;gap:6px}
+.vrow{display:flex;align-items:center;gap:4px}
+.vrow .apply{flex:1;min-width:0;height:44px;border:1px solid var(--line2);border-radius:12px;background:#fff;text-align:left;padding:0 12px;font-size:14px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.side .vh,.side .vh-item,.side .hint{display:none}
+dialog[data-kind="filter"]{overflow:hidden;display:none;flex-direction:column}
+dialog[data-kind="filter"][open]{display:flex}
+@media (max-width:699px){
+  dialog[data-kind="filter"]{margin:auto 0 0;width:100%;max-width:none;border-radius:20px 20px 0 0;max-height:90dvh}
+}
+
 /* ---------- 유틸 ---------- */
 .only-narrow{display:flex}
 
@@ -148,6 +167,11 @@ dialog::backdrop{background:rgba(20,24,34,.45)}
   .side{width:240px;align-items:stretch;padding:16px 12px}
   .side h3{display:block;margin:0 0 8px 10px;font-size:12px;font-weight:700;color:var(--muted)}
   .side .nav{justify-content:flex-start;padding:0 10px}
+  .side .vh-item{display:flex}
+  .side .hint{display:block}
+  .side .vh{display:flex;align-items:center;gap:6px;margin:12px 0 4px 10px;border:0;background:none;padding:0;height:32px;font-size:12px;font-weight:700;color:var(--muted)}
+  .side .vh .ic{width:14px;height:14px;transition:transform .12s}
+  .side .vh[aria-expanded="false"] .ic{transform:rotate(-90deg)}
   .side .nav .lbl{display:inline;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .side .nav .n{display:inline;font-size:12px;color:var(--muted)}
   .panel{width:360px}

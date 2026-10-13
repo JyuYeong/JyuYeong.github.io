@@ -5,7 +5,23 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const wide = () => matchMedia('(min-width:700px)').matches;
 
 let doc;
-const ui = { filter: 'all', hideDone: true, selectedId: null };
+const DEFAULT_Q = { text: '', statuses: [], urgencies: [], due: 'any', sort: 'due', dir: 'asc', group: 'none', hideDone: true };
+const ui = { filter: 'all', selectedId: null, viewsOpen: true };
+let q = { ...DEFAULT_Q };
+const SORT_LABEL = { due: '마감일', start: '시작일', urgency: '긴급도', created: '생성일', title: '제목' };
+const GROUP_LABEL = { none: '없음', project: 'Project', urgency: '긴급도', status: '상태', due: '마감' };
+const DUE_LABEL = { any: '전체', overdue: '지연', today: '오늘', week: '7일 이내', none: '마감일 없음' };
+const URG_RANK = { urgent: 0, high: 1, medium: 2, low: 3 };
+
+function loadPrefs() {
+  try {
+    const p = JSON.parse(localStorage.getItem('tm-ui') || 'null');
+    if (p) { q = { ...DEFAULT_Q, ...p.q }; ui.filter = p.filter || 'all'; ui.viewsOpen = p.viewsOpen !== false; }
+  } catch { /* 무시 */ }
+}
+function savePrefs() {
+  try { localStorage.setItem('tm-ui', JSON.stringify({ q, filter: ui.filter, viewsOpen: ui.viewsOpen })); } catch { /* 무시 */ }
+}
 
 const STATUS_LABEL = { todo: '할 일', in_progress: '진행 중', done: '완료', canceled: '취소됨', delayed: '지연 중' };
 const URG_LABEL = { urgent: 'Urgent', high: 'High', medium: 'Medium', low: 'Low' };
@@ -46,11 +62,66 @@ const projOf = t => (t.project_id ? liveProjects().find(p => p.id === t.project_
 const taskById = id => doc.tasks.find(t => t.id === id && !t.deleted_at);
 const isFin = t => t.status === 'done' || t.status === 'canceled';
 
+function matches(t, now) {
+  const ds = S.displayStatus(t, now);
+  if (q.statuses.length) { if (!q.statuses.includes(ds) && !q.statuses.includes(t.status)) return false; }
+  else if (q.hideDone && isFin(t)) return false;
+  if (q.urgencies.length && !q.urgencies.includes(t.urgency)) return false;
+  if (q.text) {
+    const hay = `${t.title} ${t.memo} ${t.id}`.toLowerCase();
+    if (!hay.includes(q.text.toLowerCase())) return false;
+  }
+  if (q.due !== 'any') {
+    if (q.due === 'none') return !t.due_date;
+    if (!t.due_date) return false;
+    const diff = S.dayDiff(now.date, t.due_date);
+    if (q.due === 'overdue') return S.isDelayed(t, now);
+    if (q.due === 'today') return diff === 0;
+    if (q.due === 'week') return diff >= 0 && diff <= 6;
+  }
+  return true;
+}
+
+function cmpBy(a, b) {
+  const nullLast = (x, y, f) => (x == null && y == null ? 0 : x == null ? 1 : y == null ? -1 : f(x, y));
+  const str = (x, y) => (x < y ? -1 : x > y ? 1 : 0);
+  const dir = q.dir === 'desc' ? -1 : 1;
+  let r = 0;
+  if (q.sort === 'due') return dir === 1 ? S.compareDefault(a, b) : (isFin(a) !== isFin(b) ? (isFin(a) ? 1 : -1) : -S.compareDefault(a, b));
+  if (q.sort === 'start') r = nullLast(a.start_date, b.start_date, str) * (a.start_date && b.start_date ? dir : 1);
+  else if (q.sort === 'urgency') r = (URG_RANK[a.urgency] - URG_RANK[b.urgency]) * dir;
+  else if (q.sort === 'created') r = str(a.created_at, b.created_at) * dir;
+  else if (q.sort === 'title') r = a.title.localeCompare(b.title, 'ko') * dir;
+  return r || S.compareDefault(a, b);
+}
+
 function visibleTasks() {
+  const now = S.nowKST();
   return liveTasks()
     .filter(t => (ui.filter === 'all' ? true : ui.filter === 'none' ? !projOf(t) : t.project_id === ui.filter))
-    .filter(t => !(ui.hideDone && isFin(t)))
-    .sort(S.compareDefault);
+    .filter(t => matches(t, now))
+    .sort(cmpBy);
+}
+
+function groupOf(t, now) {
+  switch (q.group) {
+    case 'project': { const p = projOf(t); const i = p ? liveProjects().indexOf(p) : 999; return [i, p ? p.name : '미분류']; }
+    case 'urgency': return [URG_RANK[t.urgency], URG_LABEL[t.urgency]];
+    case 'status': { const ds = S.displayStatus(t, now); return [['delayed', 'in_progress', 'todo', 'done', 'canceled'].indexOf(ds), STATUS_LABEL[ds]]; }
+    case 'due': {
+      if (isFin(t)) return [9, '완료/취소'];
+      if (!t.due_date) return [4, '마감일 없음'];
+      const d = S.dayDiff(now.date, t.due_date);
+      if (S.isDelayed(t, now)) return [0, '지연'];
+      return d === 0 ? [1, '오늘'] : d <= 6 ? [2, '7일 이내'] : [3, '이후'];
+    }
+  }
+  return [0, ''];
+}
+
+function filterActiveCount() {
+  return (q.text ? 1 : 0) + (q.statuses.length ? 1 : 0) + (q.urgencies.length ? 1 : 0) + (q.due !== 'any' ? 1 : 0) + (q.group !== 'none' ? 1 : 0)
+    + (q.sort !== 'due' || q.dir !== 'asc' ? 1 : 0) + (!q.hideDone && !q.statuses.length ? 1 : 0);
 }
 
 // ---------- 저장 ----------
@@ -111,11 +182,21 @@ function cardHtml(t, now) {
 function renderList() {
   const now = S.nowKST();
   const items = visibleTasks();
-  const hidden = ui.hideDone ? liveTasks().filter(isFin).length : 0;
+  const hidden = q.hideDone && !q.statuses.length ? liveTasks().filter(isFin).length : 0;
+  let html;
+  if (q.group === 'none') html = items.map(t => cardHtml(t, now)).join('');
+  else {
+    const groups = new Map();
+    items.forEach(t => { const [o, l] = groupOf(t, now); const k = o + '|' + l; if (!groups.has(k)) groups.set(k, { o, l, arr: [] }); groups.get(k).arr.push(t); });
+    html = [...groups.values()].sort((a, b) => a.o - b.o).map(g => `<div class="gh">${esc(g.l)}<span class="n">${g.arr.length}</span></div>${g.arr.map(t => cardHtml(t, now)).join('')}`).join('');
+  }
+  const fc = filterActiveCount();
+  $('#fcnt').hidden = !fc; $('#fcnt').textContent = fc;
+  $('#sortLbl').textContent = `${SORT_LABEL[q.sort]} ${q.dir === 'asc' ? '↑' : '↓'}${q.group !== 'none' ? ' · ' + GROUP_LABEL[q.group] + '별' : ''}`;
   $('#list').innerHTML = items.length
-    ? items.map(t => cardHtml(t, now)).join('')
+    ? html
     : `<p class="empty">${liveTasks().length ? '조건에 맞는 Task가 없습니다.' : '아직 Task가 없습니다. 아래에서 추가해 보세요.'}${hidden ? `<br>(완료/취소 ${hidden}건 숨김)` : ''}</p>`;
-  $('#swHide').setAttribute('aria-checked', String(ui.hideDone));
+  $('#swHide').setAttribute('aria-checked', String(q.hideDone));
 }
 
 function renderSide() {
@@ -128,6 +209,8 @@ function renderSide() {
   $('#chips').innerHTML = items.map(it => `<button class="chip" data-act="filter" data-v="${it.v}" aria-pressed="${ui.filter === it.v}">${it.icon ? '' : lead(it)}${esc(it.name)} <span class="n">${count(it.v)}</span></button>`).join('');
   $('#side').innerHTML = `<h3>Project</h3>` +
     items.map(it => `<button class="nav" data-act="filter" data-v="${it.v}" aria-pressed="${ui.filter === it.v}" title="${esc(it.name)}">${lead(it)}<span class="lbl">${esc(it.name)}</span><span class="n">${count(it.v)}</span></button>`).join('') +
+    `<button class="vh" data-act="toggle-views" aria-expanded="${ui.viewsOpen}">${ic('chev')}저장된 뷰</button>` +
+    (ui.viewsOpen ? ((doc.views || []).filter(v => !v.deleted_at).map(v => `<button class="nav vh-item" data-act="apply-view" data-id="${v.id}" title="${esc(v.name)}"><span class="lbl">${esc(v.name)}</span></button>`).join('') || '<span class="hint" style="margin:0 10px">저장된 뷰 없음</span>') : '') +
     `<span class="sp"></span>` +
     `<button class="nav" data-act="projects" title="Project 관리">${ic('folder')}<span class="lbl">Project 관리</span></button>` +
     `<button class="nav" data-act="settings" title="설정">${ic('gear')}<span class="lbl">설정</span></button>`;
@@ -247,6 +330,34 @@ function newProjectDialog(forTaskId) {
   dlg.querySelector('input').focus();
 }
 
+// ---------- 필터·정렬 시트 ----------
+const tog = (arr, v) => (arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]);
+const chipBtn = (act, v, label, on) => `<button type="button" class="chip" data-act="${act}" data-v="${v}" aria-pressed="${on}">${label}</button>`;
+
+function filterHtml() {
+  const views = (doc.views || []).filter(v => !v.deleted_at);
+  return `<div class="fsec"><label class="fl" for="q-text">검색 (제목·메모·ID)</label><input class="in" id="q-text" type="search" value="${esc(q.text)}" maxlength="100"></div>
+  <div class="fsec"><span class="fl">상태</span><div class="chips2">${['todo', 'in_progress', 'delayed', 'done', 'canceled'].map(v => chipBtn('q-status', v, STATUS_LABEL[v], q.statuses.includes(v))).join('')}</div></div>
+  <div class="fsec"><span class="fl">긴급도</span><div class="chips2">${Object.keys(URG_LABEL).map(v => chipBtn('q-urg', v, URG_LABEL[v], q.urgencies.includes(v))).join('')}</div></div>
+  <div class="fsec"><span class="fl">마감</span><div class="chips2">${Object.keys(DUE_LABEL).map(v => chipBtn('q-due', v, DUE_LABEL[v], q.due === v)).join('')}</div></div>
+  <div class="fsec"><span class="fl">정렬</span><div class="chips2">${Object.keys(SORT_LABEL).map(v => chipBtn('q-sort', v, SORT_LABEL[v], q.sort === v)).join('')}${chipBtn('q-dir', q.dir === 'asc' ? 'desc' : 'asc', q.dir === 'asc' ? '오름차순 ↑' : '내림차순 ↓', false)}</div></div>
+  <div class="fsec"><span class="fl">그룹</span><div class="chips2">${Object.keys(GROUP_LABEL).map(v => chipBtn('q-group', v, GROUP_LABEL[v], q.group === v)).join('')}</div></div>
+  <button type="button" class="sw" data-act="q-hide" role="switch" aria-checked="${q.hideDone}"><i></i>완료/취소 숨김 (상태를 고르지 않았을 때)</button>
+  <div class="fsec"><span class="fl">저장된 뷰</span>
+    ${views.map(v => `<div class="vrow"><button class="apply" data-act="apply-view" data-id="${v.id}">${esc(v.name)}</button><button class="icbtn" data-act="del-view" data-id="${v.id}" aria-label="${esc(v.name)} 삭제">${ic('trash')}</button></div>`).join('') || '<p class="hint">저장된 뷰가 없습니다.</p>'}
+    <form class="prow" id="viewForm"><input class="in" name="name" maxlength="30" placeholder="현재 조건을 뷰로 저장" aria-label="뷰 이름" required><button class="btn primary" type="submit">저장</button></form>
+  </div>
+  <div style="display:flex;gap:8px"><button class="btn" data-act="q-reset" style="flex:1">초기화</button><button class="btn primary" data-act="close-dlg" style="flex:1">${visibleTasks().length}건 보기</button></div>`;
+}
+function refreshFilter() { savePrefs(); renderList(); renderSide(); if (dlg.dataset.kind === 'filter') dlg.querySelector('.dlg-b').innerHTML = filterHtml(); }
+
+function applyView(v) {
+  q = { ...DEFAULT_Q, ...v.q };
+  ui.filter = v.project === 'all' || v.project === 'none' || liveProjects().some(p => p.id === v.project) ? v.project : 'all';
+  savePrefs(); renderSide(); renderList();
+  if (dlg.open && dlg.dataset.kind === 'filter') dlg.querySelector('.dlg-b').innerHTML = filterHtml();
+}
+
 // ---------- 동작 ----------
 function setStatus(t, v) {
   t.status = v;
@@ -292,7 +403,7 @@ document.addEventListener('click', async e => {
   const t = id ? taskById(id) : null;
 
   switch (act) {
-    case 'filter': ui.filter = el.dataset.v; renderSide(); renderList(); break;
+    case 'filter': ui.filter = el.dataset.v; savePrefs(); renderSide(); renderList(); break;
     case 'open':
       ui.selectedId = id; renderPanel(); renderList(); break;
     case 'close-panel': closePanel(); break;
@@ -384,11 +495,27 @@ document.addEventListener('click', async e => {
       break;
     }
     case 'close-dlg': dlg.close(); break;
+    case 'filter-sheet': openDlg('filter', '필터·정렬', filterHtml()); break;
+    case 'q-status': q.statuses = tog(q.statuses, el.dataset.v); refreshFilter(); break;
+    case 'q-urg': q.urgencies = tog(q.urgencies, el.dataset.v); refreshFilter(); break;
+    case 'q-due': q.due = el.dataset.v; refreshFilter(); break;
+    case 'q-sort': q.sort = el.dataset.v; refreshFilter(); break;
+    case 'q-dir': q.dir = el.dataset.v; refreshFilter(); break;
+    case 'q-group': q.group = el.dataset.v; refreshFilter(); break;
+    case 'q-hide': q.hideDone = !q.hideDone; refreshFilter(); break;
+    case 'q-reset': q = { ...DEFAULT_Q }; ui.filter = 'all'; refreshFilter(); break;
+    case 'toggle-views': ui.viewsOpen = !ui.viewsOpen; savePrefs(); renderSide(); break;
+    case 'apply-view': { const v = (doc.views || []).find(x => x.id === id && !x.deleted_at); if (v) { applyView(v); if (dlg.open && dlg.dataset.kind === 'filter') dlg.close(); } break; }
+    case 'del-view': {
+      const v = (doc.views || []).find(x => x.id === id);
+      if (v) { v.deleted_at = new Date().toISOString(); v.updated_at = v.deleted_at; persist(); refreshFilter(); }
+      break;
+    }
   }
 });
 
 $('#backdrop').addEventListener('click', closePanel);
-$('#swHide').addEventListener('click', () => { ui.hideDone = !ui.hideDone; renderList(); });
+$('#swHide').addEventListener('click', () => { q.hideDone = !q.hideDone; savePrefs(); renderList(); });
 
 // 입력 필드 (자동 저장)
 document.addEventListener('input', e => {
@@ -425,6 +552,25 @@ dlg.addEventListener('change', e => {
   if (!p || !name) { if (p) e.target.value = p.name; return; }
   p.name = name; p.updated_at = new Date().toISOString();
   persist(); renderAll();
+});
+
+// 뷰 저장 / 검색
+dlg.addEventListener('input', e => {
+  if (e.target.id === 'q-text') { q.text = e.target.value.trim(); savePrefs(); renderList(); const b = dlg.querySelector('[data-act=close-dlg].primary'); if (b) b.textContent = `${visibleTasks().length}건 보기`; }
+});
+dlg.addEventListener('submit', e => {
+  if (e.target.id !== 'viewForm') return;
+  e.preventDefault();
+  const name = String(new FormData(e.target).get('name')).trim().slice(0, 30);
+  if (!name) return;
+  const ts = new Date().toISOString();
+  doc.views = doc.views || [];
+  const used = new Set(doc.views.map(v => v.id));
+  let vid; do { vid = 'V-' + Array.from(crypto.getRandomValues(new Uint8Array(5)), b => '23456789abcdefghjkmnpqrstuvwxyz'[b % 31]).join(''); } while (used.has(vid));
+  const exist = doc.views.find(v => !v.deleted_at && v.name === name);
+  if (exist) { exist.project = ui.filter; exist.q = { ...q }; exist.updated_at = ts; }
+  else doc.views.push({ id: vid, name, project: ui.filter, q: { ...q }, updated_at: ts, deleted_at: null });
+  persist(); refreshFilter(); toast(`뷰 “${name}” 저장됨`);
 });
 
 // 새 Project 폼 (두 다이얼로그 공용)
@@ -465,8 +611,14 @@ addEventListener('resize', () => {
 // ---------- 시작 ----------
 (async function init() {
   doc = await S.load();
+  loadPrefs();
+  if (!['all', 'none'].includes(ui.filter) && !liveProjects().some(p => p.id === ui.filter)) ui.filter = 'all';
   if (!S.storageOk) $('#syncLabel').textContent = '저장 불가 (임시)';
   renderAll();
   navigator.storage?.persist?.().then(v => { settingsHtml.persisted = v; }).catch(() => {});
   setInterval(() => { renderList(); renderSide(); }, 60000); // 지연 중 상태 갱신
 })();
+
+// 탭을 닫거나 숨길 때 대기 중인 저장을 즉시 반영
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && doc) persist(true); });
+addEventListener('pagehide', () => { if (doc) persist(true); });

@@ -22,7 +22,7 @@
     </header>
     <div class="chips only-narrow" id="chips" role="toolbar" aria-label="Project 필터"></div>
     <div class="bar">
-      <span class="sortlbl">마감일 ↑</span>
+      <button class="btn" id="btnFilter" data-act="filter-sheet" aria-haspopup="dialog"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>필터·정렬<span class="cnt" id="fcnt" hidden></span></button><span class="sortlbl" id="sortLbl"></span>
       <button class="sw" id="swHide" role="switch" aria-checked="true"><i></i>완료/취소 숨김</button>
     </div>
     <section class="list" id="list" aria-label="Task 목록"></section>
