@@ -1,4 +1,5 @@
 import * as S from './store.js';
+import * as Sync from './sync.js';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -37,7 +38,8 @@ const P = {
   chev: '<path d="M7 10l5 5 5-5"/>',
   trash: '<path d="M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12M10.5 11v5M13.5 11v5"/>',
   copy: '<rect x="8.5" y="8.5" width="10" height="10" rx="2"/><path d="M5.5 14.5V7a2 2 0 012-2h7"/>',
-  menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+  chevR: '<path d="M10 7l5 5-5 5"/>',
+  chevL: '<path d="M14 7l-5 5 5 5"/>',
   list: '<path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/>',
   cal: '<rect x="4" y="5.5" width="16" height="14" rx="2.5"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/>',
   gear: '<path d="M5 8h9M18 8h1M5 16h1M10 16h9"/><circle cx="16" cy="8" r="2"/><circle cx="8" cy="16" r="2"/>',
@@ -131,8 +133,9 @@ let saveTimer;
 function persist(now = false) {
   clearTimeout(saveTimer);
   const run = async () => {
-    const ok = await S.save(doc);
-    $('#syncLabel').textContent = ok ? '이 기기에 저장됨' : '저장 불가 (임시)';
+    await S.save(doc);
+    renderSyncLabel();
+    Sync.schedule();
   };
   if (now) return run();
   saveTimer = setTimeout(run, 250);
@@ -142,6 +145,35 @@ function touch(t) {
   persist();
   renderList();
   renderSide();
+}
+
+// ---------- 동기화 상태 표시 ----------
+function renderSyncLabel() {
+  const st = Sync.getState();
+  const el = $('#syncLabel');
+  const map = {
+    off: [S.storageOk ? '이 기기에 저장됨' : '저장 불가 (임시)', S.storageOk ? '' : 'warn'],
+    'needs-auth': ['로그인 필요', 'warn'],
+    syncing: ['동기화 중…', ''],
+    ok: [`동기화됨 ${st.lastSync ? st.lastSync.slice(-5) : ''}`, 'ok'],
+    offline: ['오프라인 (대기 중)', ''],
+    error: ['동기화 오류', 'warn'],
+  };
+  const [text, cls] = map[st.status] || map.off;
+  el.textContent = text;
+  el.className = 'sync ' + cls;
+  if (dlg.open && dlg.dataset.kind === 'settings') dlg.querySelector('.dlg-b').innerHTML = settingsHtml();
+}
+const SYNC_TEXT = { off: '사용 안 함', 'needs-auth': '로그인 필요', syncing: '동기화 중…', ok: '정상', offline: '오프라인', error: '오류' };
+
+async function applyMerged(m) {
+  doc.projects = m.projects; doc.tasks = m.tasks; doc.views = m.views; doc.schema_version = m.schema_version;
+  await S.save(doc);
+  if (!['all', 'none'].includes(ui.filter) && !liveProjects().some(p => p.id === ui.filter)) ui.filter = 'all';
+  renderSide(); renderList();
+  const typing = document.activeElement && $('#panel').contains(document.activeElement) && /INPUT|TEXTAREA/.test(document.activeElement.tagName);
+  if (!typing || (ui.selectedId && !taskById(ui.selectedId))) renderPanel();
+  if (dlg.open && dlg.dataset.kind === 'filter') dlg.querySelector('.dlg-b').innerHTML = filterHtml();
 }
 
 // ---------- 날짜 표시 ----------
@@ -209,7 +241,7 @@ function renderSide() {
   if (count('none') || ui.filter === 'none') items.push({ v: 'none', name: '미분류' });
   const lead = it => it.icon || `<span class="dot" style="background:${it.color ? esc(it.color) : '#9AA1B1'}"></span>`;
   $('#chips').innerHTML = items.map(it => `<button class="chip" data-act="filter" data-v="${it.v}" aria-pressed="${ui.filter === it.v}">${it.icon ? '' : lead(it)}${esc(it.name)} <span class="n">${count(it.v)}</span></button>`).join('');
-  $('#side').innerHTML = `<button class="nav rail-toggle" data-act="rail-toggle" aria-expanded="${ui.railOpen}" title="메뉴 펼치기/접기">${ic('menu')}<span class="lbl">접기</span></button><h3>Project</h3>` +
+  $('#side').innerHTML = `<button class="nav rail-toggle" data-act="rail-toggle" aria-expanded="${ui.railOpen}" title="메뉴 펼치기/접기">${ic(ui.railOpen ? 'chevL' : 'chevR')}<span class="lbl">접기</span></button><h3>Project</h3>` +
     items.map(it => `<button class="nav" data-act="filter" data-v="${it.v}" aria-pressed="${ui.filter === it.v}" title="${esc(it.name)}">${lead(it)}<span class="lbl">${esc(it.name)}</span><span class="n">${count(it.v)}</span></button>`).join('') +
     `<button class="vh" data-act="toggle-views" aria-expanded="${ui.viewsOpen}">${ic('chev')}저장된 뷰</button>` +
     (ui.viewsOpen ? ((doc.views || []).filter(v => !v.deleted_at).map(v => `<button class="nav vh-item" data-act="apply-view" data-id="${v.id}" title="${esc(v.name)}"><span class="lbl">${esc(v.name)}</span></button>`).join('') || '<span class="hint" style="margin:0 10px">저장된 뷰 없음</span>') : '') +
@@ -312,6 +344,9 @@ function settingsHtml() {
   return `<div class="kv"><span>화면 크기 (CSS px)</span><span id="scrSize">${innerWidth} × ${innerHeight}</span></div>
     <div class="kv"><span>화면 배율</span><span>${devicePixelRatio}x</span></div>
     <p class="hint">폴드 접힘/펼침 상태에서 이 값을 확인해 두면 화면 분기 기준(700px / 1100px)을 맞추는 데 쓸 수 있습니다.</p>
+    <div class="kv"><span>Google Drive 동기화</span><span>${SYNC_TEXT[Sync.getState().status]}${Sync.getState().lastSync ? ' · ' + esc(Sync.getState().lastSync) : ''}</span></div>
+    ${Sync.getState().detail && Sync.getState().status !== 'ok' ? `<p class="hint">${esc(Sync.getState().detail)}</p>` : ''}
+    ${Sync.getState().signedIn ? '<button class="btn" data-act="sync-now">지금 동기화</button><button class="btn" data-act="sign-out">Google 로그아웃 (동기화 중지)</button>' : '<button class="btn primary" data-act="sign-in">Google 로그인 · Drive 동기화 켜기</button>'}
     <div class="kv"><span>저장 위치</span><span>${S.storageOk ? '이 기기 (IndexedDB)' : '저장 불가 (임시)'}</span></div>
     <div class="kv"><span>브라우저 보존 보장</span><span>${persisted === undefined ? '확인 중' : persisted ? '예' : '아니오'}</span></div>
     <div class="kv"><span>Task / Project</span><span>${liveTasks().length}건 / ${liveProjects().length}개</span></div>
@@ -499,6 +534,15 @@ document.addEventListener('click', async e => {
       break;
     }
     case 'close-dlg': dlg.close(); break;
+    case 'sign-in': Sync.signIn(); break;
+    case 'sign-out': Sync.signOut(); toast('동기화를 중지했습니다. 이 기기의 데이터는 그대로 남아 있습니다.'); break;
+    case 'sync-now': Sync.syncNow(); break;
+    case 'sync-click': {
+      const st = Sync.getState();
+      if (!st.signedIn) { openDlg('settings', '설정', settingsHtml()); break; }
+      Sync.syncNow();
+      break;
+    }
     case 'filter-sheet': openDlg('filter', '필터·정렬', filterHtml()); break;
     case 'q-status': q.statuses = tog(q.statuses, el.dataset.v); refreshFilter(); break;
     case 'q-urg': q.urgencies = tog(q.urgencies, el.dataset.v); refreshFilter(); break;
@@ -618,8 +662,9 @@ addEventListener('resize', () => {
   doc = await S.load();
   loadPrefs();
   if (!['all', 'none'].includes(ui.filter) && !liveProjects().some(p => p.id === ui.filter)) ui.filter = 'all';
-  if (!S.storageOk) $('#syncLabel').textContent = '저장 불가 (임시)';
   renderAll();
+  Sync.init({ getDoc: () => doc, applyMerged, onStatus: renderSyncLabel });
+  renderSyncLabel();
   navigator.storage?.persist?.().then(v => { settingsHtml.persisted = v; }).catch(() => {});
   setInterval(() => { renderList(); renderSide(); }, 60000); // 지연 중 상태 갱신
 })();

@@ -22,7 +22,9 @@ button:focus-visible,input:focus-visible,[tabindex]:focus-visible{outline:2px so
 .main{flex:1;min-width:0;display:flex;flex-direction:column}
 .top{flex:none;display:flex;align-items:center;gap:4px;height:56px;padding:0 6px 0 16px;background:var(--surface)}
 .top h1{margin:0;flex:1;font-size:18px;font-weight:700}
-.sync{font-size:12px;color:var(--muted)}
+.sync{font-size:12px;color:var(--muted);border:0;background:none;height:44px;padding:0 8px;border-radius:10px}
+.sync.warn{color:var(--danger);font-weight:600}
+.sync.ok{color:var(--ok)}
 .chips{flex:none;display:flex;gap:8px;padding:2px 16px 12px;background:var(--surface);border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
 .chips::-webkit-scrollbar{display:none}
 .chip{display:inline-flex;align-items:center;gap:6px;height:40px;padding:0 14px;border:1px solid var(--line2);border-radius:999px;background:#fff;font-size:14px;font-weight:500;color:#3A4152;white-space:nowrap;flex:none}
@@ -144,9 +146,9 @@ dialog[data-kind="filter"][open]{display:flex}
 }
 
 /* ---------- 레일 임시 펼치기 (700~1099px) ---------- */
-.side .rail-toggle{display:none}
+.side button.rail-toggle{display:none}
 @media (min-width:700px) and (max-width:1099px){
-  .side .rail-toggle{display:flex}
+  .side button.rail-toggle{display:flex}
   .app.rail-open .side{position:fixed;left:0;top:0;bottom:0;width:240px;z-index:30;padding:12px;box-shadow:4px 0 24px rgba(20,24,34,.18)}
   .app.rail-open .main{margin-left:64px}
   .app.rail-open .side h3{display:block;margin:8px 0 8px 10px;font-size:12px;font-weight:700;color:var(--muted)}
@@ -158,7 +160,7 @@ dialog[data-kind="filter"][open]{display:flex}
   .app.rail-open .side .vh-item{display:flex}
   .app.rail-open .side .hint{display:block}
 }
-@media (min-width:1100px){.side .rail-toggle{display:none}}
+@media (min-width:1100px){.side button.rail-toggle{display:none}}
 
 /* ---------- 유틸 ---------- */
 .only-narrow{display:flex}
