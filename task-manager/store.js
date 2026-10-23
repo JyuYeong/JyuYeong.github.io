@@ -6,7 +6,7 @@ const ID_CHARS = '23456789abcdefghjkmnpqrstuvwxyz';
 const PALETTE = ['#4F7CAC', '#B5651D', '#5E8C61', '#8A5FB0', '#C2547A', '#3E8E8E', '#A38B2D', '#7A7F8C'];
 const URGENCY_RANK = { urgent: 0, high: 1, medium: 2, low: 3 };
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2; // 2: Project에 order 필드 추가, 동기화가 알 수 없는 키를 보존
 export let storageOk = true; // IndexedDB를 쓸 수 없으면 false (메모리에만 보관)
 
 // ---------- 날짜 (KST 문자열) ----------
@@ -101,11 +101,30 @@ export function addProject(doc, name) {
     name,
     color: PALETTE[doc.projects.length % PALETTE.length],
     archived: false,
+    order: nextProjectOrder(doc),
     updated_at: ts,
     deleted_at: null,
   };
   doc.projects.push(p);
   return p;
+}
+
+// ---------- Project 표시 순서 ----------
+const ordOf = p => (Number.isFinite(p.order) ? p.order : 1e9); // order가 없으면 맨 뒤, 동률이면 ID순
+export const compareProjects = (a, b) => ordOf(a) - ordOf(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+function nextProjectOrder(doc) {
+  return doc.projects.reduce((m, p) => (Number.isFinite(p.order) ? Math.max(m, p.order) : m), -1) + 1;
+}
+// order가 없는 Project(구버전에서 만든 것 포함)에 맨 뒤 번호를 채운다. 바뀌었으면 true.
+export function ensureProjectOrder(doc) {
+  let changed = false;
+  for (const p of doc.projects) {
+    if (Number.isFinite(p.order)) continue;
+    p.order = nextProjectOrder(doc);
+    p.updated_at = nowIso();
+    changed = true;
+  }
+  return changed;
 }
 
 // ---------- IndexedDB ----------
@@ -131,7 +150,7 @@ function tx(mode, fn) {
 export async function load() {
   try {
     const d = await tx('readonly', s => s.get(KEY));
-    if (d && Array.isArray(d.tasks)) return d;
+    if (d && Array.isArray(d.tasks)) { d.schema_version = Math.max(d.schema_version || 1, SCHEMA_VERSION); return d; }
   } catch { storageOk = false; }
   return mem || emptyDoc();
 }

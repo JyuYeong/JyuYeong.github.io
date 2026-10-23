@@ -61,7 +61,7 @@ function stIcon(s) {
 
 // ---------- 데이터 조회 ----------
 const liveTasks = () => doc.tasks.filter(t => !t.deleted_at);
-const liveProjects = () => doc.projects.filter(p => !p.deleted_at);
+const liveProjects = () => doc.projects.filter(p => !p.deleted_at).sort(S.compareProjects);
 const projOf = t => (t.project_id ? liveProjects().find(p => p.id === t.project_id) || null : null);
 const taskById = id => doc.tasks.find(t => t.id === id && !t.deleted_at);
 const isFin = t => t.status === 'done' || t.status === 'canceled';
@@ -167,7 +167,8 @@ function renderSyncLabel() {
 const SYNC_TEXT = { off: '사용 안 함', 'needs-auth': '로그인 필요', syncing: '동기화 중…', ok: '정상', offline: '오프라인', error: '오류' };
 
 async function applyMerged(m) {
-  doc.projects = m.projects; doc.tasks = m.tasks; doc.views = m.views; doc.schema_version = m.schema_version;
+  for (const k of Object.keys(m)) if (k !== 'updated_at') doc[k] = m[k]; // 모르는 키도 그대로 보존
+  S.ensureProjectOrder(doc); // 구버전에서 만든 Project에 order를 채움 (같은 객체라 이번 동기화에 함께 올라감)
   await S.save(doc);
   if (!['all', 'none'].includes(ui.filter) && !liveProjects().some(p => p.id === ui.filter)) ui.filter = 'all';
   renderSide(); renderList();
@@ -356,7 +357,11 @@ function settingsHtml() {
 }
 
 function projectsHtml() {
-  const rows = liveProjects().map(p => `<div class="prow${p.archived ? ' arch' : ''}"><span class="dot" style="background:${esc(p.color)}"></span><input class="in" data-pid="${p.id}" value="${esc(p.name)}" maxlength="40" aria-label="Project 이름"><button class="btn" data-act="archive" data-id="${p.id}">${p.archived ? '복원' : '보관'}</button></div>`).join('');
+  const list = liveProjects();
+  const rows = list.map((p, i) => `<div class="prow${p.archived ? ' arch' : ''}"><span class="dot" style="background:${esc(p.color)}"></span><input class="in" data-pid="${p.id}" value="${esc(p.name)}" maxlength="40" aria-label="Project 이름">`
+    + `<button class="icbtn sm" data-act="proj-up" data-id="${p.id}" aria-label="${esc(p.name)} 위로 이동"${i === 0 ? ' disabled' : ''}>${ic('chev', 'transform:rotate(180deg)')}</button>`
+    + `<button class="icbtn sm" data-act="proj-down" data-id="${p.id}" aria-label="${esc(p.name)} 아래로 이동"${i === list.length - 1 ? ' disabled' : ''}>${ic('chev')}</button>`
+    + `<button class="btn" data-act="archive" data-id="${p.id}">${p.archived ? '복원' : '보관'}</button></div>`).join('');
   return `${rows || '<p class="hint">아직 Project가 없습니다.</p>'}
     <form class="prow" id="newProjForm"><input class="in" name="name" maxlength="40" placeholder="새 Project 이름" aria-label="새 Project 이름" required><button class="btn primary" type="submit">추가</button></form>
     <p class="hint">보관한 Project는 선택 목록에서 숨겨지고 Task는 그대로 유지됩니다.</p>`;
@@ -512,6 +517,20 @@ document.addEventListener('click', async e => {
       break;
     }
     case 'projects': if (ui.railOpen) setRail(false); openDlg('projects', 'Project 관리', projectsHtml()); break;
+    case 'proj-up': case 'proj-down': {
+      const list = liveProjects();
+      const i = list.findIndex(p => p.id === id);
+      const j = act === 'proj-up' ? i - 1 : i + 1;
+      if (i < 0 || j < 0 || j >= list.length) break;
+      [list[i], list[j]] = [list[j], list[i]];
+      const ts = new Date().toISOString();
+      list.forEach((p, n) => { if (p.order !== n) { p.order = n; p.updated_at = ts; } });
+      persist(); renderAll();
+      dlg.querySelector('.dlg-b').innerHTML = projectsHtml();
+      const same = dlg.querySelector(`[data-act="${act}"][data-id="${id}"]`);
+      (same && !same.disabled ? same : dlg.querySelector(`[data-id="${id}"][data-act^="proj-"]:not([disabled])`))?.focus();
+      break;
+    }
     case 'archive': {
       const p = doc.projects.find(x => x.id === id);
       if (!p) break;
@@ -660,6 +679,7 @@ addEventListener('resize', () => {
 // ---------- 시작 ----------
 (async function init() {
   doc = await S.load();
+  if (S.ensureProjectOrder(doc)) persist();
   loadPrefs();
   if (!['all', 'none'].includes(ui.filter) && !liveProjects().some(p => p.id === ui.filter)) ui.filter = 'all';
   renderAll();

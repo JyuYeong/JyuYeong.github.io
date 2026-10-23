@@ -125,6 +125,8 @@ dialog::backdrop{background:rgba(20,24,34,.45)}
 .prow{display:flex;align-items:center;gap:8px}
 .prow .in{flex:1;min-width:0}
 .prow.arch .in{color:var(--muted);text-decoration:line-through}
+.icbtn.sm{width:32px;height:36px;flex:none}
+.icbtn[disabled]{opacity:.3;pointer-events:none}
 
 /* ---------- M2: 필터·정렬·그룹·뷰 ---------- */
 .bar .btn{height:40px}

@@ -1,4 +1,4 @@
-// Google Drive 동기화 (M3): tasks.json 한 파일, 항목별 최신 수정 우선 병합
+// Google Drive 동기화 (M3, M3.1): tasks.json 한 파일, 항목별 최신 수정 우선 병합, 모르는 키 보존
 import { CLIENT_ID, FOLDER_ID, SCOPE } from './config.js';
 import { nowKST, todayKST } from './store.js';
 
@@ -18,27 +18,43 @@ const ls = (k, v) => {
 };
 
 // ---------- 병합 (순수 함수) ----------
+// 알려진 키(KEYS) 외에도, 최상위의 id 배열(이후 추가될 ticker, settings 등)은 항목별로 병합하고
+// 그 밖의 값은 더 최근에 수정된 문서의 것을 보존한다 (모르는 키를 지우지 않기 위함).
+const META = new Set(['schema_version', 'updated_at']);
+const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+const isEntityArray = a => Array.isArray(a) && a.every(e => e && typeof e.id === 'string');
+const keysOf = (...docs) => [...new Set([...KEYS, ...docs.flatMap(d => Object.keys(d || {}))])].filter(k => !META.has(k));
+
 export function mergeDocs(local, remote, now = Date.now()) {
   const out = { schema_version: Math.max(local.schema_version || 1, remote?.schema_version || 1), updated_at: '' };
-  for (const k of KEYS) {
-    const map = new Map();
-    for (const e of local[k] || []) map.set(e.id, e);
-    for (const r of remote?.[k] || []) {
-      const l = map.get(r.id);
-      if (!l || (r.updated_at || '') > (l.updated_at || '')) map.set(r.id, r);
+  const remoteNewer = (remote?.updated_at || '') > (local.updated_at || '');
+  for (const k of keysOf(local, remote)) {
+    const l = local[k], r = remote?.[k];
+    if ((l === undefined || isEntityArray(l)) && (r === undefined || isEntityArray(r))) {
+      const map = new Map();
+      for (const e of l || []) map.set(e.id, e);
+      for (const e of r || []) {
+        const cur = map.get(e.id);
+        if (!cur || (e.updated_at || '') > (cur.updated_at || '')) map.set(e.id, e);
+      }
+      out[k] = [...map.values()]
+        .filter(e => !(e.deleted_at && now - Date.parse(e.deleted_at) > PURGE_DAYS * 86400000))
+        .sort(byId);
+    } else {
+      out[k] = l === undefined ? r : r === undefined ? l : remoteNewer ? r : l;
     }
-    out[k] = [...map.values()]
-      .filter(e => !(e.deleted_at && now - Date.parse(e.deleted_at) > PURGE_DAYS * 86400000))
-      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   }
   out.updated_at = [local.updated_at, remote?.updated_at].filter(Boolean).sort().pop() || new Date().toISOString();
   return out;
 }
 export function sameEntities(a, b) {
-  const norm = d => JSON.stringify(KEYS.map(k => [...(d?.[k] || [])].sort((x, y) => (x.id < y.id ? -1 : 1))));
+  const norm = d => JSON.stringify(keysOf(a, b).sort().map(k => { const v = d?.[k]; return [k, isEntityArray(v) ? [...v].sort(byId) : (v ?? [])]; }));
   return norm(a) === norm(b);
 }
-const serialize = d => JSON.stringify({ schema_version: d.schema_version, updated_at: d.updated_at, projects: d.projects, tasks: d.tasks, views: d.views || [] }, null, 1);
+export function serialize(d) {
+  const { schema_version, updated_at, projects, tasks, views, ...rest } = d;
+  return JSON.stringify({ schema_version, updated_at, projects, tasks, views: views || [], ...rest }, null, 1);
+}
 
 // ---------- 상태 ----------
 let hooks = { getDoc: () => null, applyMerged: () => {}, onStatus: () => {} };
