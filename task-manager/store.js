@@ -65,7 +65,7 @@ function uniqueId(prefix, used) {
 const nowIso = () => new Date().toISOString();
 
 export function emptyDoc() {
-  return { schema_version: SCHEMA_VERSION, updated_at: nowIso(), projects: [], tasks: [], views: [] };
+  return { schema_version: SCHEMA_VERSION, updated_at: nowIso(), projects: [], tasks: [], views: [], ticker: [], settings: [] };
 }
 
 export function createTask(doc, fields = {}) {
@@ -80,6 +80,7 @@ export function createTask(doc, fields = {}) {
     start_date: todayKST(),
     due_date: null,
     due_time: null,
+    blocked_by: null, // 선행 Task ID (M3.2, 1개)
     created_at: ts,
     updated_at: ts,
     completed_at: null,
@@ -125,6 +126,61 @@ export function ensureProjectOrder(doc) {
     changed = true;
   }
   return changed;
+}
+
+// ---------- 선행 Task (M3.2) ----------
+// task를 predId에 걸면 순환이 생기는지: predId에서 선행을 따라가다 task 자신이 나오면 순환
+export function wouldCycle(doc, taskId, predId) {
+  const seen = new Set();
+  let cur = predId;
+  while (cur && !seen.has(cur)) {
+    if (cur === taskId) return true;
+    seen.add(cur);
+    cur = doc.tasks.find(x => x.id === cur && !x.deleted_at)?.blocked_by || null;
+  }
+  return false;
+}
+
+// ---------- 티커 (M3.2) ----------
+export const TICKER_COLORS = { normal: '일반', caution: '주의', must: '필독' };
+const TK_ID = 'S-ticker';
+const TK_DEFAULT = { id: TK_ID, color: 'normal', position: 'bottom', updated_at: '', deleted_at: null };
+
+export function tickerSettings(doc) {
+  const s = (doc.settings || []).find(x => x.id === TK_ID && !x.deleted_at);
+  return { ...TK_DEFAULT, ...s };
+}
+export function setTickerSettings(doc, patch) {
+  doc.settings ||= [];
+  let s = doc.settings.find(x => x.id === TK_ID);
+  if (!s) { s = { ...TK_DEFAULT }; doc.settings.push(s); }
+  Object.assign(s, patch, { updated_at: nowIso(), deleted_at: null });
+  return s;
+}
+export function createTicker(doc, text) {
+  text = String(text || '').trim().slice(0, 120);
+  if (!text) return null;
+  doc.ticker ||= [];
+  const ts = nowIso();
+  const k = {
+    id: uniqueId('K-', new Set(doc.ticker.map(x => x.id))),
+    text, enabled: true, expire_date: null, daily_from: null, daily_to: null,
+    created_at: ts, updated_at: ts, deleted_at: null,
+  };
+  doc.ticker.push(k);
+  return k;
+}
+// 매일 시간대: from<to 이면 그 사이, from>to 이면 자정을 넘김, 같으면 종일
+export function inDailyWindow(time, from, to) {
+  if (!from || !to || from === to) return true;
+  return from < to ? time >= from && time < to : time >= from || time < to;
+}
+// 'expired' | 'off' | 'outside' | 'on' — 'on'일 때만 띠에 표시
+export function tickerState(k, now = nowKST()) {
+  if (k.expire_date && now.date > k.expire_date) return 'expired';
+  if (!k.enabled) return 'off';
+  if (!inDailyWindow(now.time, k.daily_from, k.daily_to)) return 'outside';
+  return 'on';
 }
 
 // ---------- IndexedDB ----------

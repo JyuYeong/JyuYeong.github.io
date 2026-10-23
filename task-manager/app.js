@@ -44,17 +44,22 @@ const P = {
   cal: '<rect x="4" y="5.5" width="16" height="14" rx="2.5"/><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"/>',
   gear: '<path d="M5 8h9M18 8h1M5 16h1M10 16h9"/><circle cx="16" cy="8" r="2"/><circle cx="8" cy="16" r="2"/>',
   folder: '<path d="M4 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2z"/>',
+  bell: '<path d="M4 10v4h3l6 4V6l-6 4z"/><path d="M16.5 9.5a3.5 3.5 0 010 5M19 7a7 7 0 010 10"/>',
+  link: '<path d="M10 14a4 4 0 005.66 0l3-3a4 4 0 00-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 00-5.66 0l-3 3a4 4 0 005.66 5.66l1-1"/>',
+  pause: '<path d="M9 6v12M15 6v12"/>',
 };
 const ic = (name, style = '', cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true"${style ? ` style="${style}"` : ''}>${P[name]}</svg>`;
 
 function stIcon(s) {
-  const base = (stroke, fill = '#fff') => `<circle cx="12" cy="12" r="9" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`;
+  // 색은 CSS 변수(--st-*)로 지정해 다크 모드에서도 바뀌게 한다
+  const c = v => `var(--st-${v})`;
+  const base = (stroke, fill = 'var(--surface)') => `<circle cx="12" cy="12" r="9" style="fill:${fill};stroke:${stroke}" stroke-width="2"/>`;
   const body = {
-    todo: base('#7A8294'),
-    in_progress: base('#2D5BE3') + '<path d="M12 3a9 9 0 010 18z" fill="#2D5BE3"/>',
-    done: base('#1E7A46', '#1E7A46') + '<path d="M7.8 12.4l3 3 5.4-5.8" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>',
-    canceled: base('#6B7385', '#6B7385') + '<path d="M9 9l6 6M15 9l-6 6" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/>',
-    delayed: base('#D93025') + '<path d="M12 7.5v5" stroke="#D93025" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="16.3" r="1.4" fill="#D93025"/>',
+    todo: base(c('todo')),
+    in_progress: base(c('prog')) + `<path d="M12 3a9 9 0 010 18z" style="fill:${c('prog')}"/>`,
+    done: base(c('done'), c('done')) + `<path d="M7.8 12.4l3 3 5.4-5.8" fill="none" style="stroke:${c('on')}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`,
+    canceled: base(c('cancel'), c('cancel')) + `<path d="M9 9l6 6M15 9l-6 6" style="stroke:${c('on')}" stroke-width="2.2" stroke-linecap="round"/>`,
+    delayed: base(c('late')) + `<path d="M12 7.5v5" style="stroke:${c('late')}" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="16.3" r="1.4" style="fill:${c('late')}"/>`,
   }[s];
   return `<svg class="st" viewBox="0 0 24 24" aria-hidden="true">${body}</svg>`;
 }
@@ -171,10 +176,11 @@ async function applyMerged(m) {
   S.ensureProjectOrder(doc); // 구버전에서 만든 Project에 order를 채움 (같은 객체라 이번 동기화에 함께 올라감)
   await S.save(doc);
   if (!['all', 'none'].includes(ui.filter) && !liveProjects().some(p => p.id === ui.filter)) ui.filter = 'all';
-  renderSide(); renderList();
+  renderSide(); renderList(); renderTicker();
   const typing = document.activeElement && $('#panel').contains(document.activeElement) && /INPUT|TEXTAREA/.test(document.activeElement.tagName);
   if (!typing || (ui.selectedId && !taskById(ui.selectedId))) renderPanel();
   if (dlg.open && dlg.dataset.kind === 'filter') dlg.querySelector('.dlg-b').innerHTML = filterHtml();
+  if (dlg.open && dlg.dataset.kind === 'ticker' && !dlg.contains(document.activeElement?.closest('input') || null)) refreshTickerDlg();
 }
 
 // ---------- 날짜 표시 ----------
@@ -193,10 +199,27 @@ function datesHtml(t, now) {
       suffix = diff > 0 ? ` · D-${diff}` : diff === 0 ? (late ? ' · 시간 지남' : ' · D-Day') : ` · ${-diff}일 지연`;
     }
     const clock = t.due_time ? ic('clock') : '';
-    parts.push(`<span class="d${late ? ' late' : ''}"${!late && !isFin(t) ? ' style="color:#1B1F2A;font-weight:600"' : ''}>${clock}마감 ${md(t.due_date)}${t.due_time ? ' ' + t.due_time : ''}${suffix}</span>`);
+    parts.push(`<span class="d${late ? ' late' : !isFin(t) ? ' due' : ''}">${clock}마감 ${md(t.due_date)}${t.due_time ? ' ' + t.due_time : ''}${suffix}</span>`);
   }
   if (t.start_date) parts.push(`<span class="d">시작 ${md(t.start_date)}</span>`);
   return parts.length ? `<div class="dates">${parts.join('')}</div>` : '';
+}
+
+// ---------- 선행 Task 안내 (M3.2) ----------
+const successorsOf = t => liveTasks().filter(s => s.blocked_by === t.id);
+function depBadges(t) {
+  if (isFin(t)) return '';
+  let h = '';
+  const pred = t.blocked_by ? taskById(t.blocked_by) : null;
+  if (pred && !isFin(pred)) h += `<span class="badge dep" title="먼저 완료되어야 함: ${esc(pred.title)} (${pred.id})">선행 필요 · ${esc(pred.title)}</span>`;
+  const n = successorsOf(t).filter(s => !isFin(s)).length;
+  if (n) h += `<span class="badge dep" title="이 Task가 끝나야 진행할 수 있는 후속 Task ${n}건">후속 작업 ${n > 1 ? n + '건' : '있음'}</span>`;
+  return h;
+}
+function setBlocker(t, predId) {
+  t.blocked_by = predId;
+  touch(t);
+  renderPanel();
 }
 
 // ---------- 렌더 ----------
@@ -207,7 +230,7 @@ function cardHtml(t, now) {
     <button class="chk" data-act="menu-status" data-id="${t.id}" aria-label="상태: ${STATUS_LABEL[ds]}, 변경하려면 선택" aria-haspopup="menu">${stIcon(ds)}</button>
     <div class="body">
       <div class="row1"><div class="title">${esc(t.title)}</div><button class="idbtn" data-act="copy-id" data-id="${t.id}" aria-label="Task ID ${t.id} 복사">${t.id}</button></div>
-      <div class="meta"><span class="proj"><span class="dot" style="background:${p ? esc(p.color) : '#9AA1B1'}"></span>${p ? esc(p.name) : '미분류'}</span><span class="badge u-${t.urgency}">${URG_LABEL[t.urgency]}</span></div>
+      <div class="meta"><span class="proj"><span class="dot" style="background:${p ? esc(p.color) : 'var(--dot)'}"></span>${p ? esc(p.name) : '미분류'}</span><span class="badge u-${t.urgency}">${URG_LABEL[t.urgency]}</span>${depBadges(t)}</div>
       ${datesHtml(t, now)}
       ${t.memo ? `<div class="memo">${esc(t.memo)}</div>` : ''}
     </div>
@@ -240,13 +263,14 @@ function renderSide() {
   const items = [{ v: 'all', name: '전체', icon: ic('list') }];
   liveProjects().filter(p => !p.archived || ui.filter === p.id).forEach(p => items.push({ v: p.id, name: p.name, color: p.color }));
   if (count('none') || ui.filter === 'none') items.push({ v: 'none', name: '미분류' });
-  const lead = it => it.icon || `<span class="dot" style="background:${it.color ? esc(it.color) : '#9AA1B1'}"></span>`;
+  const lead = it => it.icon || `<span class="dot" style="background:${it.color ? esc(it.color) : 'var(--dot)'}"></span>`;
   $('#chips').innerHTML = items.map(it => `<button class="chip" data-act="filter" data-v="${it.v}" aria-pressed="${ui.filter === it.v}">${it.icon ? '' : lead(it)}${esc(it.name)} <span class="n">${count(it.v)}</span></button>`).join('');
   $('#side').innerHTML = `<button class="nav rail-toggle" data-act="rail-toggle" aria-expanded="${ui.railOpen}" title="메뉴 펼치기/접기">${ic(ui.railOpen ? 'chevL' : 'chevR')}<span class="lbl">접기</span></button><h3>Project</h3>` +
     items.map(it => `<button class="nav" data-act="filter" data-v="${it.v}" aria-pressed="${ui.filter === it.v}" title="${esc(it.name)}">${lead(it)}<span class="lbl">${esc(it.name)}</span><span class="n">${count(it.v)}</span></button>`).join('') +
     `<button class="vh" data-act="toggle-views" aria-expanded="${ui.viewsOpen}">${ic('chev')}저장된 뷰</button>` +
     (ui.viewsOpen ? ((doc.views || []).filter(v => !v.deleted_at).map(v => `<button class="nav vh-item" data-act="apply-view" data-id="${v.id}" title="${esc(v.name)}"><span class="lbl">${esc(v.name)}</span></button>`).join('') || '<span class="hint" style="margin:0 10px">저장된 뷰 없음</span>') : '') +
     `<span class="sp"></span>` +
+    `<button class="nav" data-act="ticker" title="티커">${ic('bell')}<span class="lbl">티커</span></button>` +
     `<button class="nav" data-act="projects" title="Project 관리">${ic('folder')}<span class="lbl">Project 관리</span></button>` +
     `<button class="nav" data-act="settings" title="설정">${ic('gear')}<span class="lbl">설정</span></button>`;
 }
@@ -264,7 +288,8 @@ function panelHtml(t) {
   return `<div class="ph"><h2>Task 편집</h2><span class="saved">${ic('check')}자동 저장됨</span><button class="icbtn" data-act="close-panel" aria-label="편집 닫기">${ic('x')}</button></div>
   <div class="pb">
     <div><label class="fl" for="f-title">제목</label><input class="in" id="f-title" data-f="title" maxlength="200" value="${esc(t.title)}"></div>
-    <div><span class="fl" id="lbl-proj">Project</span><button type="button" class="sel" data-act="menu-project" aria-haspopup="listbox" aria-labelledby="lbl-proj"><span class="l"><span class="dot" style="background:${p ? esc(p.color) : '#9AA1B1'}"></span>${p ? esc(p.name) : '미분류'}</span>${ic('chev', 'color:#5F6676')}</button></div>
+    <div><span class="fl" id="lbl-proj">Project</span><button type="button" class="sel" data-act="menu-project" aria-haspopup="listbox" aria-labelledby="lbl-proj"><span class="l"><span class="dot" style="background:${p ? esc(p.color) : 'var(--dot)'}"></span>${p ? esc(p.name) : '미분류'}</span>${ic('chev', 'color:var(--muted)')}</button></div>
+    ${depFieldHtml(t)}
     <div><span class="fl">상태</span>${seg('status', [['todo', '할 일'], ['in_progress', '진행 중'], ['done', '완료'], ['canceled', '취소됨']], t.status)}</div>
     ${ds === 'delayed' ? '<p class="note">마감이 지나 “지연 중”으로 표시됩니다 (자동). 완료/취소하면 해제됩니다.</p>' : ''}
     <div><span class="fl">긴급도</span>${seg('urgency', [['urgent', 'Urgent'], ['high', 'High'], ['medium', 'Medium'], ['low', 'Low']], t.urgency)}</div>
@@ -278,20 +303,100 @@ function panelHtml(t) {
   <div class="pf"><span class="lbl">Task ID</span><button class="idbtn" data-act="copy-id" data-id="${t.id}" aria-label="Task ID ${t.id} 복사">${ic('copy', 'width:14px;height:14px')}${t.id}</button><button class="del" data-act="delete" data-id="${t.id}">${ic('trash')}삭제</button></div>`;
 }
 
+function depFieldHtml(t) {
+  const pred = t.blocked_by ? taskById(t.blocked_by) : null;
+  const succ = successorsOf(t);
+  const label = pred ? `${ic('link')}<span class="t">${esc(pred.title)}</span>` : '<span class="t">없음 · 먼저 끝나야 할 Task 선택</span>';
+  return `<div><span class="fl" id="lbl-dep">선행 Task</span>
+    <div class="selrow"><button type="button" class="sel${pred ? '' : ' empty-val'}" data-act="menu-blocker" aria-haspopup="listbox" aria-labelledby="lbl-dep"><span class="l">${label}</span>${ic('chev', 'color:var(--muted)')}</button>${pred ? `<button type="button" class="icbtn" data-act="clear-blocker" aria-label="선행 Task 해제">${ic('x')}</button>` : ''}</div>
+    ${pred && isFin(pred) ? '<p class="hint" style="margin-top:6px">선행 Task가 끝나서 카드 안내는 표시하지 않습니다.</p>' : ''}
+    ${pred || succ.length ? `<div class="deps">${pred ? `선행:<button type="button" data-act="open" data-id="${pred.id}" title="${esc(pred.title)} 열기">${esc(pred.title)}</button>` : ''}${succ.length ? `후속:${succ.map(s => `<button type="button" data-act="open" data-id="${s.id}" title="${esc(s.title)} 열기">${esc(s.title)}</button>`).join('')}` : ''}</div>` : ''}
+  </div>`;
+}
+
 function renderPanel() {
   const t = ui.selectedId ? taskById(ui.selectedId) : null;
   if (!t) ui.selectedId = null;
   $('#panel').innerHTML = panelHtml(t);
   document.body.classList.toggle('sheet-open', !!t && !wide());
+  document.body.classList.toggle('no-sel', !t); // 넓은 화면: 선택이 없으면 패널을 접음
 }
-const renderAll = () => { renderSide(); renderList(); renderPanel(); };
+const renderAll = () => { renderSide(); renderList(); renderPanel(); renderTicker(); };
+
+// ---------- 티커 (M3.2) ----------
+const byCreated = (a, b) => ((a.created_at || '') < (b.created_at || '') ? -1 : (a.created_at || '') > (b.created_at || '') ? 1 : 0);
+const TK_SPEED = 55; // px/초
+let tkKey = '';
+function renderTicker(force = false) {
+  const el = $('#ticker');
+  if (!el || !doc) return;
+  const set = S.tickerSettings(doc);
+  const now = S.nowKST();
+  const items = (doc.ticker || []).filter(k => !k.deleted_at && S.tickerState(k, now) === 'on').sort(byCreated);
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const key = JSON.stringify([set.color, set.position, items.map(k => [k.id, k.text]), innerWidth, reduce]);
+  if (!force && key === tkKey) return;
+  tkKey = key;
+  const anchor = set.position === 'top' ? $('.bar') : $('#quick');
+  if (el.nextElementSibling !== anchor) anchor.before(el);
+  el.className = `ticker c-${set.color} pos-${set.position}${el.classList.contains('paused') ? ' paused' : ''}`;
+  if (!items.length) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  const unit = `<span class="tk-unit" style="display:inline-flex">${items.map(k => `<span class="tk-item">${esc(k.text)}</span><span class="tk-sep">•</span>`).join('')}</span>`;
+  el.title = '누르면 일시정지 / 다시 재생';
+  el.innerHTML = `<div class="tk-track" aria-hidden="true">${unit}</div><span class="sr">알림: ${items.map(k => esc(k.text)).join(' / ')}</span><span class="tk-pause" aria-hidden="true">${ic('pause')}일시정지</span>`;
+  if (reduce) return; // 동작 줄이기: 흐르지 않고 한 번만 표시
+  const track = el.firstElementChild;
+  const w = track.firstElementChild.getBoundingClientRect().width || 1;
+  const reps = Math.max(1, Math.ceil(el.clientWidth / w)); // 화면보다 짧으면 반복해서 빈틈이 없게
+  const half = unit.repeat(reps);
+  track.innerHTML = half + half; // 절반만큼 이동하면 처음과 같은 모양 → 끊김 없는 반복
+  track.style.setProperty('--tk-dur', ((w * reps) / TK_SPEED).toFixed(1) + 's');
+}
+$('#ticker').addEventListener('click', e => { e.currentTarget.classList.toggle('paused'); });
+
+const TK_STATE = { on: ['표시 중', 'on'], off: ['꺼짐', ''], outside: ['시간대 외', ''], expired: ['만료', 'exp'] };
+function tickerHtml() {
+  const set = S.tickerSettings(doc);
+  const now = S.nowKST();
+  const list = (doc.ticker || []).filter(k => !k.deleted_at).sort(byCreated);
+  const sw = c => `<span class="swatch" style="background:var(--tk-${c}-bg);box-shadow:0 0 0 1px var(--line2)"></span>`;
+  const rows = list.map(k => {
+    const [lbl, cls] = TK_STATE[S.tickerState(k, now)];
+    const fld = (f, type, label, extra = '') => `<input class="in" type="${type}" data-kid="${k.id}" data-kf="${f}" value="${esc(k[f] || '')}" aria-label="${label}"${extra}>`;
+    return `<div class="tkrow${k.enabled ? '' : ' off'}" data-row="${k.id}">
+      <div class="r1"><button type="button" class="sw" role="switch" data-act="tk-toggle" data-id="${k.id}" aria-checked="${k.enabled}" aria-label="띠에 표시"><i></i></button>${fld('text', 'text', '문장', ' maxlength="120"')}<button type="button" class="icbtn sm" data-act="tk-del" data-id="${k.id}" aria-label="문장 삭제">${ic('trash')}</button></div>
+      <div class="r2"><span class="tw">종료일${fld('expire_date', 'date', '표시 종료일')}</span><span class="tw">매일${fld('daily_from', 'time', '표시 시작 시각')}~${fld('daily_to', 'time', '표시 종료 시각')}</span><span class="tkst ${cls}">${lbl}</span></div>
+    </div>`;
+  }).join('');
+  return `<div class="fsec"><span class="fl">띠 색상</span>${seg('tkcolor', Object.entries(S.TICKER_COLORS).map(([v, l]) => [v, sw(v) + l]), set.color)}</div>
+    <div class="fsec"><span class="fl">띠 위치</span>${seg('tkpos', [['top', '위'], ['bottom', '아래']], set.position)}</div>
+    <div class="fsec"><span class="fl">문장</span><div class="tkset">${rows || '<p class="hint">아직 문장이 없습니다.</p>'}</div></div>
+    <form class="prow" id="tkForm" autocomplete="off"><input class="in" name="text" maxlength="120" placeholder="새 문장" aria-label="새 문장" required><button class="btn primary" type="submit">추가</button></form>
+    <p class="hint">켜 둔 문장만 띠에 흐릅니다. 종료일이 지나면 띠에서 사라지고 "만료"로 남습니다. 매일 시간대는 시작과 끝을 모두 넣어야 적용되고, 시작이 끝보다 늦으면 자정을 넘깁니다(예: 22:00~06:00). 띠를 누르면 일시정지합니다.</p>`;
+}
+function refreshTickerDlg(focusSel) {
+  if (!dlg.open || dlg.dataset.kind !== 'ticker') return;
+  dlg.querySelector('.dlg-b').innerHTML = tickerHtml();
+  if (focusSel) dlg.querySelector(focusSel)?.focus();
+}
+function updateTickerRow(k) { // 입력 중 포커스를 잃지 않도록 행의 상태 표시만 갱신
+  const row = dlg.querySelector(`[data-row="${k.id}"]`);
+  if (!row) return;
+  const [lbl, cls] = TK_STATE[S.tickerState(k)];
+  const st = row.querySelector('.tkst');
+  st.textContent = lbl; st.className = `tkst ${cls}`;
+  row.classList.toggle('off', !k.enabled);
+  row.querySelector('[data-act="tk-toggle"]').setAttribute('aria-checked', String(k.enabled));
+}
+const tickerById = id => (doc.ticker || []).find(k => k.id === id && !k.deleted_at);
 
 // ---------- 팝오버 메뉴 ----------
 let closeMenu = () => {};
 function openMenu(anchor, items) {
   closeMenu();
   const root = $('#menuRoot');
-  root.innerHTML = `<div class="pop" role="menu">${items.map((it, i) => `<button class="mi${it.cur ? ' cur' : ''}${it.add ? ' add' : ''}" role="menuitem" data-i="${i}">${it.icon || ''}${esc(it.label)}${it.cur ? ic('check', '', 'ck') : ''}</button>`).join('')}</div>`;
+  root.innerHTML = `<div class="pop" role="menu">${items.map((it, i) => `<button class="mi${it.cur ? ' cur' : ''}${it.add ? ' add' : ''}" role="menuitem" data-i="${i}">${it.icon || ''}${esc(it.label)}${it.sub ? `<span class="sub">${esc(it.sub)}</span>` : ''}${it.cur ? ic('check', '', 'ck') : ''}</button>`).join('')}</div>`;
   const pop = root.firstElementChild;
   const r = anchor.getBoundingClientRect();
   const w = Math.max(pop.offsetWidth, anchor.matches('.sel') ? r.width : 0);
@@ -352,6 +457,7 @@ function settingsHtml() {
     <div class="kv"><span>브라우저 보존 보장</span><span>${persisted === undefined ? '확인 중' : persisted ? '예' : '아니오'}</span></div>
     <div class="kv"><span>Task / Project</span><span>${liveTasks().length}건 / ${liveProjects().length}개</span></div>
     <button class="btn" data-act="projects">Project 관리</button>
+    <button class="btn" data-act="ticker">티커 관리</button>
     <button class="btn" data-act="export">JSON 내려받기</button>
     <button class="btn danger" data-act="wipe">이 기기 데이터 삭제</button>`;
 }
@@ -467,6 +573,47 @@ document.addEventListener('click', async e => {
       items.push({ label: '미분류', icon: '<span class="dot"></span>', cur: !t2.project_id, onPick: () => { t2.project_id = null; touch(t2); renderPanel(); } });
       items.push({ label: '새 Project', icon: ic('plus'), add: true, onPick: () => newProjectDialog(t2.id) });
       openMenu(el, items);
+      break;
+    }
+    case 'menu-blocker': {
+      const t2 = taskById(ui.selectedId);
+      if (!t2) break;
+      const same = c => c.project_id === t2.project_id;
+      const cands = liveTasks()
+        .filter(c => c.id !== t2.id && (!isFin(c) || c.id === t2.blocked_by) && !S.wouldCycle(doc, t2.id, c.id))
+        .sort((a, b) => (same(a) === same(b) ? S.compareDefault(a, b) : same(a) ? -1 : 1));
+      const items = [{ label: '없음', icon: '', cur: !t2.blocked_by, onPick: () => setBlocker(t2, null) }];
+      cands.forEach(c => items.push({ label: c.title, sub: c.id, icon: stIcon(S.displayStatus(c)), cur: t2.blocked_by === c.id, onPick: () => setBlocker(t2, c.id) }));
+      if (!cands.length) items.push({ label: '고를 수 있는 Task가 없습니다', icon: '', onPick: () => {} });
+      openMenu(el, items);
+      break;
+    }
+    case 'clear-blocker': { const t2 = taskById(ui.selectedId); if (t2) setBlocker(t2, null); break; }
+    case 'ticker': if (ui.railOpen) setRail(false); openDlg('ticker', '티커', tickerHtml()); break;
+    case 'set-tkcolor': case 'set-tkpos': {
+      const v = el.dataset.v;
+      S.setTickerSettings(doc, act === 'set-tkcolor' ? { color: v } : { position: v });
+      persist(); renderTicker();
+      refreshTickerDlg(`[data-act="${act}"][data-v="${v}"]`);
+      break;
+    }
+    case 'tk-toggle': {
+      const k = tickerById(id);
+      if (!k) break;
+      k.enabled = !k.enabled; k.updated_at = new Date().toISOString();
+      persist(); renderTicker(); updateTickerRow(k);
+      break;
+    }
+    case 'tk-del': {
+      const k = tickerById(id);
+      if (!k) break;
+      if (el.dataset.armed !== '1') { // 실수 방지: 한 번 더 눌러야 삭제
+        el.dataset.armed = '1'; el.style.color = 'var(--danger)'; el.setAttribute('aria-label', '한 번 더 누르면 삭제');
+        setTimeout(() => { if (el.isConnected) { el.dataset.armed = ''; el.style.color = ''; el.setAttribute('aria-label', '문장 삭제'); } }, 3000);
+        break;
+      }
+      k.deleted_at = new Date().toISOString(); k.updated_at = k.deleted_at;
+      persist(); renderTicker(); refreshTickerDlg('#tkForm input');
       break;
     }
     case 'set-status': { const t2 = taskById(ui.selectedId); if (t2) setStatus(t2, el.dataset.v); break; }
@@ -622,6 +769,30 @@ dlg.addEventListener('change', e => {
   persist(); renderAll();
 });
 
+// 티커 문장 편집 (관리 다이얼로그) — 입력을 마치면(change) 저장
+dlg.addEventListener('change', e => {
+  const kid = e.target.dataset?.kid;
+  if (!kid) return;
+  const k = tickerById(kid);
+  if (!k) return;
+  const f = e.target.dataset.kf, v = e.target.value;
+  if (f === 'text') {
+    const s = v.trim().slice(0, 120);
+    if (!s) { e.target.value = k.text; return; }
+    k.text = s;
+  } else if (['expire_date', 'daily_from', 'daily_to'].includes(f)) k[f] = v || null;
+  else return;
+  k.updated_at = new Date().toISOString();
+  persist(); renderTicker(); updateTickerRow(k);
+});
+dlg.addEventListener('submit', e => {
+  if (e.target.id !== 'tkForm') return;
+  e.preventDefault();
+  const k = S.createTicker(doc, new FormData(e.target).get('text'));
+  if (!k) return;
+  persist(); renderTicker(); refreshTickerDlg('#tkForm input');
+});
+
 // 뷰 저장 / 검색
 dlg.addEventListener('input', e => {
   if (e.target.id === 'q-text') { q.text = e.target.value.trim(); savePrefs(); renderList(); const b = dlg.querySelector('[data-act=close-dlg].primary'); if (b) b.textContent = `${visibleTasks().length}건 보기`; }
@@ -674,7 +845,10 @@ addEventListener('resize', () => {
   const sz = $('#scrSize');
   if (sz) sz.textContent = `${innerWidth} × ${innerHeight}`;
   document.body.classList.toggle('sheet-open', !!ui.selectedId && !wide());
+  clearTimeout(tkResize);
+  tkResize = setTimeout(() => renderTicker(), 200);
 });
+let tkResize;
 
 // ---------- 시작 ----------
 (async function init() {
@@ -686,7 +860,8 @@ addEventListener('resize', () => {
   Sync.init({ getDoc: () => doc, applyMerged, onStatus: renderSyncLabel });
   renderSyncLabel();
   navigator.storage?.persist?.().then(v => { settingsHtml.persisted = v; }).catch(() => {});
-  setInterval(() => { renderList(); renderSide(); }, 60000); // 지연 중 상태 갱신
+  setInterval(() => { renderList(); renderSide(); renderTicker(); }, 60000); // 지연 중 상태·티커 표시 시간 갱신
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') renderTicker(); });
 })();
 
 // 탭을 닫거나 숨길 때 대기 중인 저장을 즉시 반영
