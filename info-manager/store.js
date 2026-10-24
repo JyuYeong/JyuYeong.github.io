@@ -154,6 +154,12 @@ export function safeHref(url) {
 const META = new Set(['schema_version', 'updated_at']);
 const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 const isEntityArray = a => Array.isArray(a) && a.every(e => e && typeof e.id === 'string');
+// 문서 두 개의 항목 내용이 같은지 (updated_at 등 문서 메타는 무시)
+export function sameEntities(a, b) {
+  const keys = [...new Set([...Object.keys(a || {}), ...Object.keys(b || {})])].filter(k => !META.has(k)).sort();
+  const norm = d => JSON.stringify(keys.map(k => { const v = d?.[k]; return [k, isEntityArray(v) ? [...v].sort(byId) : (v ?? [])]; }));
+  return norm(a) === norm(b);
+}
 export function mergeDocs(local, remote, now = Date.now()) {
   const out = { schema_version: Math.max(local.schema_version || 1, remote?.schema_version || 1), updated_at: '' };
   const remoteNewer = (remote?.updated_at || '') > (local.updated_at || '');
@@ -248,6 +254,7 @@ export function nameTaken(doc, parentId, type, name, exceptId = null) {
 export function createNode(doc, parentId, type, fields = {}) {
   const name = String(fields.name || '').trim().slice(0, 100);
   if (!name) return { error: type === 'folder' ? '폴더 이름을 입력하세요' : 'key를 입력하세요' };
+  if (type === 'folder' && name.includes('/')) return { error: '폴더 이름에는 /를 쓸 수 없습니다' };
   if (parentId && !nodeById(doc, parentId)) return { error: '상위 폴더가 없습니다' };
   if (nameTaken(doc, parentId, type, name)) return { error: type === 'folder' ? '같은 이름의 폴더가 이미 있습니다' : '같은 key가 이미 있습니다' };
   const ts = nowIso();
@@ -261,6 +268,7 @@ export function updateNode(doc, node, patch) {
   if ('name' in next) {
     next.name = String(next.name || '').trim().slice(0, 100);
     if (!next.name) return { error: node.type === 'folder' ? '폴더 이름을 입력하세요' : 'key를 입력하세요' };
+    if (node.type === 'folder' && next.name.includes('/')) return { error: '폴더 이름에는 /를 쓸 수 없습니다' };
     if (nameTaken(doc, node.parent_id, node.type, next.name, node.id)) return { error: node.type === 'folder' ? '같은 이름의 폴더가 이미 있습니다' : '같은 key가 이미 있습니다' };
   }
   if ('value' in next) next.value = String(next.value ?? '');
@@ -294,4 +302,38 @@ export function deleteNode(doc, node) {
 export function countUnder(doc, id) {
   const d = descendantsOf(doc, id);
   return { folders: d.filter(n => n.type === 'folder').length, fields: d.filter(n => n.type === 'field').length };
+}
+
+// 'a/b/c' 경로를 parentId 아래에 만든다. 이미 있는 폴더(대소문자 무시)는 그대로 쓰고 없는 단계만 만든다
+export function splitPath(text) {
+  return String(text || '').split('/').map(p => p.trim()).filter(Boolean);
+}
+// 실제로 만들지 않고 계획만: { segments, existing: [노드], toCreate: [이름], error }
+export function planPath(doc, parentId, text) {
+  const segments = splitPath(text);
+  if (!segments.length) return { segments, existing: [], toCreate: [], error: '폴더 이름을 입력하세요' };
+  if (segments.some(s => s.length > 100)) return { segments, existing: [], toCreate: [], error: '폴더 이름은 100자까지입니다' };
+  const existing = [];
+  let pid = parentId || null, i = 0;
+  for (; i < segments.length; i++) {
+    const f = live(doc.nodes).find(n => n.type === 'folder' && (n.parent_id || null) === pid && sameName(n.name, segments[i]));
+    if (!f) break;
+    existing.push(f);
+    pid = f.id;
+  }
+  return { segments, existing, toCreate: segments.slice(i), error: null };
+}
+// 성공하면 { node: 마지막 폴더, created: [새로 만든 노드] }
+export function createPath(doc, parentId, text) {
+  const plan = planPath(doc, parentId, text);
+  if (plan.error) return { error: plan.error };
+  let pid = plan.existing.length ? plan.existing[plan.existing.length - 1].id : parentId || null;
+  const created = [];
+  for (const name of plan.toCreate) {
+    const r = createNode(doc, pid, 'folder', { name });
+    if (r.error) return { error: r.error };
+    created.push(r.node);
+    pid = r.node.id;
+  }
+  return { node: nodeById(doc, pid), created };
 }

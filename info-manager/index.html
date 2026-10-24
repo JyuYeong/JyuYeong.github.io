@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; img-src 'self' data:; connect-src 'self' https://www.googleapis.com https://accounts.google.com; frame-src https://accounts.google.com; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex, nofollow">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
@@ -25,7 +25,7 @@
   <div class="main">
     <header class="top">
       <h1>Info Manager</h1>
-      <span class="sync" id="saveLabel">이 기기에 저장됨</span>
+      <button class="sync" id="saveLabel" data-act="sync-label">이 기기에 저장됨</button>
       <button class="icbtn only-narrow" data-act="search-toggle" aria-label="검색">
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>
       </button>

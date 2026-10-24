@@ -91,6 +91,8 @@ async function wrapForRecovery(dek, raw) {
 }
 
 // ---------- 금고 (메타) ----------
+// 금고 ID: 기기마다 따로 만든 금고를 구별한다 (같은 금고끼리만 동기화)
+export const newVaultId = () => 'V-' + b64(rand(12)).replace(/[+/=]/g, c => ({ '+': '-', '/': '_', '=': '' }[c]));
 // 메타는 평문으로 저장되며 비밀 값이 없다: { meta_version, created_at, updated_at, wrapped_keys: { pin, recovery } }
 export async function createVault(pin, { iterations = PIN_ITERATIONS } = {}) {
   if (!isPin(pin)) throw new Error('bad-pin');
@@ -98,7 +100,7 @@ export async function createVault(pin, { iterations = PIN_ITERATIONS } = {}) {
   const raw = rand(16);
   const ts = new Date().toISOString();
   const meta = {
-    meta_version: META_VERSION, created_at: ts, updated_at: ts,
+    meta_version: META_VERSION, vault_id: newVaultId(), created_at: ts, updated_at: ts,
     wrapped_keys: { pin: await wrapForPin(dek, pin, iterations), recovery: await wrapForRecovery(dek, raw) },
   };
   return { meta, dek, recovery: formatRecovery(raw) };

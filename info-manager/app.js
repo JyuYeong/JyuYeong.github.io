@@ -2,8 +2,9 @@
 import * as C from './crypto.js';
 import * as S from './store.js';
 import * as Q from './search.js';
+import * as Sync from './sync.js';
 
-export const VERSION = 'M2';
+export const VERSION = 'M3';
 const IDLE_MS = 5 * 60 * 1000;
 const MAX_FAILS = 5;
 const FAIL_WAIT_MS = 30 * 1000;
@@ -73,7 +74,7 @@ function save(kind = 'personal') {
   saveTimer = setTimeout(flush, 250);
 }
 // 표시된 문서를 지금 암호화해 저장한다 (잠그기 전, 화면을 벗어날 때)
-function flush() {
+function flush(noSync = false) {
   clearTimeout(saveTimer);
   const key = dek;
   if (!unlocked || !key || !dirty.size) return saving;
@@ -89,13 +90,29 @@ function flush() {
     }
     if (Object.keys(entries).length) saveOk = await S.putMany(entries);
     renderSaveLabel();
+    if (!noSync) Sync.schedule(2000);
   });
   return saving;
 }
 function renderSaveLabel() {
   const el = $('#saveLabel');
-  el.textContent = saveOk ? '이 기기에 저장됨' : '저장 실패';
-  el.classList.toggle('warn', !saveOk);
+  if (!el) return;
+  const st = Sync.getState();
+  const map = {
+    off: ['이 기기에만 저장', '', 'Google Drive 연결하기'],
+    idle: ['Drive 연결됨', '', '지금 동기화'],
+    syncing: ['동기화 중…', '', ''],
+    ok: [`동기화됨 ${st.lastSync || ''}`, 'ok', '지금 동기화'],
+    'needs-auth': ['Drive 로그인 필요', 'warn', '눌러서 로그인'],
+    offline: ['오프라인 · 이 기기에 저장됨', '', ''],
+    error: ['동기화 오류', 'warn', '자세히 보기'],
+    conflict: ['다른 금고 발견', 'warn', '눌러서 정하기'],
+  };
+  let [text, cls, title] = map[st.status] || map.off;
+  if (!saveOk) { text = '저장 실패'; cls = 'warn'; title = '이 기기 저장소에 쓰지 못했습니다'; }
+  el.textContent = text;
+  el.className = 'sync ' + cls;
+  el.title = title;
 }
 
 // ---------- 토스트 / 다이얼로그 ----------
@@ -119,16 +136,18 @@ function openDialog(title, body, foot = '') {
 dlg().addEventListener('click', e => {
   if (e.target === dlg() || e.target.closest('[data-dlg="close"]')) closeDialog();
 });
-dlg().addEventListener('close', () => { dlg().innerHTML = ''; });
+// 닫은 직후 다른 내용을 바로 열 수 있으므로, close 이벤트가 늦게 와도 다시 열린 상태면 건드리지 않는다
+dlg().addEventListener('close', () => { if (!dlg().open) dlg().innerHTML = ''; });
 function confirmDialog(title, msg, okLabel = '확인', danger = false) {
   return new Promise(resolve => {
     const d = openDialog(title, `<p>${msg}</p>`,
       `<button class="btn" data-r="0">취소</button><button class="btn ${danger ? 'danger' : 'primary'}" data-r="1">${esc(okLabel)}</button>`);
-    const done = v => { d.removeEventListener('click', on); d.removeEventListener('close', onClose); closeDialog(); resolve(v); };
+    let fin = false;
+    const done = v => { if (fin) return; fin = true; d.removeEventListener('click', on); d.removeEventListener('close', onClose); closeDialog(); resolve(v); };
     const on = e => { const b = e.target.closest('[data-r]'); if (b) done(b.dataset.r === '1'); };
-    const onClose = () => resolve(false);
+    const onClose = () => { if (!d.open) done(false); };
     d.addEventListener('click', on);
-    d.addEventListener('close', onClose, { once: true });
+    d.addEventListener('close', onClose);
   });
 }
 
@@ -140,6 +159,7 @@ let pad = null; // { len, buf, onDone, busy }
 let fails = 0, waitUntil = 0, waitTimer = null;
 
 function showGate(html) {
+  $('#toast').hidden = true;
   gate.innerHTML = `<div class="gbox">${html}</div>`;
   gate.hidden = false;
   $('#app').hidden = true;
@@ -209,13 +229,38 @@ document.addEventListener('keydown', e => {
 
 // ---------- 처음 설정 ----------
 const setup = { pin: null, vault: null };
-function setupIntro() {
+function setupIntro(msg = '') {
   pad = null;
   showGate(`${LOGO}<h1>Info Manager</h1>
-    <p>개인 계정과 업무 정보를 이 기기에 암호화해 보관합니다.<br>먼저 PIN 4자리와 복구 키를 만듭니다.</p>
+    <p>개인 계정과 업무 정보를 암호화해 보관하고, Google Drive로 기기 간에 동기화합니다.</p>
     ${testWarning()}
     ${S.storageOk ? '' : `<div class="warn">${ic('warn')}<div><b>이 브라우저는 저장소를 쓸 수 없습니다</b>시크릿 창이거나 저장소가 막혀 있으면 닫을 때 데이터가 사라집니다.</div></div>`}
-    <button class="btn primary" data-g="setup-start">시작하기</button>`);
+    ${msg ? `<p class="gmsg box">${esc(msg)}</p>` : ''}
+    <div class="choice">
+      <button class="btn primary" data-g="setup-start">새 금고 만들기</button>
+      <span class="or">이미 다른 기기에서 만들었다면</span>
+      <button class="btn" data-g="import">Drive에 있는 금고 불러오기</button>
+    </div>`);
+}
+// 다른 기기에서 만든 금고를 Drive에서 받아 이 기기에 저장한다 (복호화는 PIN 입력 때)
+async function importVault() {
+  pad = null;
+  showGate(`<div class="spin" aria-hidden="true"></div><p>Google 로그인 후 Drive에서 금고를 찾습니다…</p>`);
+  if (!(await Sync.signIn())) { setupIntro('Google 로그인을 하지 못했습니다. 팝업 차단을 확인하고 다시 시도하세요'); return; }
+  let v;
+  try { v = await Sync.fetchVault(); }
+  catch (e) { setupIntro(e.offline ? '인터넷에 연결되어 있지 않습니다' : 'Drive에서 금고를 읽지 못했습니다: ' + e.message); return; }
+  if (!v) { setupIntro('Drive에 금고가 없습니다. 먼저 다른 기기에서 금고를 만들고 Drive에 연결하세요'); return; }
+  await storeVault(v);
+  lockScreen('Drive 금고를 받았습니다. 그 금고의 PIN을 입력하세요');
+}
+async function storeVault(v) {
+  const entries = { meta: v.meta };
+  if (v.personal) entries.personal = v.personal;
+  if (v.work) entries.work = v.work;
+  await S.clearAll();
+  await S.putMany(entries);
+  meta = v.meta;
 }
 function testWarning() {
   return `<div class="warn">${ic('warn')}<div><b>1차 테스트 단계입니다</b>PIN 4자리만으로 보호되므로 실제 비밀번호나 고객사 정보는 넣지 말고 테스트용 데이터만 넣어 주세요.</div></div>`;
@@ -288,6 +333,7 @@ function lockScreen(msg = '', info = true) {
   });
 }
 async function openWith(key) {
+  if (!meta.vault_id) { meta = { ...meta, vault_id: C.newVaultId() }; await S.put('meta', meta); } // M1·M2에서 만든 금고
   const [pb, wb] = await Promise.all([S.get('personal'), S.get('work')]);
   const p = pb ? await C.decryptDoc(key, pb, 'personal') : (() => { const d = S.emptyPersonal(); S.seedPresets(d); return d; })();
   const w = wb ? await C.decryptDoc(key, wb, 'work') : S.emptyWork();
@@ -330,7 +376,7 @@ function recoveryPin2() {
     padMsg('저장하는 중…', true);
     const next = await C.rewrapPin(meta, rec.dek, pin);
     await S.put('meta', next);
-    meta = next; bc?.postMessage({ type: 'meta', tab: TAB_ID });
+    meta = next; bc?.postMessage({ type: 'meta', tab: TAB_ID }); Sync.schedule(500);
     const key = rec.dek; rec.dek = null; rec.pin = null; fails = 0;
     try { await openWith(key); toast('새 PIN으로 바꿨습니다'); }
     catch { lockScreen('데이터를 열 수 없습니다', false); }
@@ -340,6 +386,7 @@ function recoveryPin2() {
 function gateAction(act) {
   switch (act) {
     case 'setup-start': return setupPin1();
+    case 'import': return importVault();
     case 'setup-pin-again': setup.pin = null; return setupPin1();
     case 'setup-key-next': return setupConfirm();
     case 'setup-key-back': return setupKey();
@@ -367,6 +414,7 @@ function enterApp(msg) {
   saveOk = S.storageOk; renderSaveLabel();
   renderAll();
   if (msg) toast(msg);
+  if (Sync.isSignedIn()) Sync.syncNow();
 }
 async function lock(msg = '') {
   if (!unlocked) return;
@@ -434,7 +482,7 @@ function renderNav() {
 }
 function renderBar() {
   if (searching()) { $('#bar').innerHTML = `<h2>검색 결과</h2><span class="n" id="qCount"></span><button class="btn" data-act="search-clear">${ic('x')}검색 닫기</button>`; return; }
-  if (ui.view === 'work') { $('#bar').innerHTML = workBar(); return; }
+  if (ui.view === 'work') { $('#bar').innerHTML = workBar(); const cr = $('#bar .crumbs'); if (cr) cr.scrollLeft = cr.scrollWidth; return; }
   const c = counts();
   const add = { accounts: '계정 추가', notes: '메모 추가', social: '소셜 추가' }[ui.view];
   $('#bar').innerHTML = `<h2>${esc(VIEWS[ui.view])}</h2><span class="n">${c[ui.view] ?? ''}</span>
@@ -652,9 +700,9 @@ function bindForm() {
   });
 }
 // validate(값)이 오류 문구를 돌려주면 창을 닫지 않고 보여 준다
-function promptDialog(title, label, value, { okLabel = '추가', validate = null } = {}) {
+function promptDialog(title, label, value, { okLabel = '추가', validate = null, hint = null, placeholder = '', maxlength = 120 } = {}) {
   return new Promise(resolve => {
-    const d = openDialog(title, `<form id="pf" autocomplete="off"><label class="fl" for="pIn">${esc(label)}</label><input class="in" id="pIn" maxlength="120" value="${esc(value)}" autocapitalize="off" spellcheck="false"><p class="note" id="pErr" hidden></p></form>`,
+    const d = openDialog(title, `<form id="pf" autocomplete="off"><label class="fl" for="pIn">${esc(label)}</label><input class="in" id="pIn" maxlength="${maxlength}" value="${esc(value)}" placeholder="${esc(placeholder)}" autocapitalize="off" spellcheck="false"><p class="note" id="pErr" hidden></p>${hint ? `<p class="hint" id="pHint">${esc(hint(value))}</p>` : ''}</form>`,
       `<button class="btn" data-r="0">취소</button><button class="btn primary" data-r="1">${esc(okLabel)}</button>`);
     let doneV = false;
     const done = v => { if (doneV) return; doneV = true; d.removeEventListener('click', on); closeDialog(); resolve(v); };
@@ -667,7 +715,9 @@ function promptDialog(title, label, value, { okLabel = '추가', validate = null
     const on = e => { const b = e.target.closest('[data-r]'); if (b) (b.dataset.r === '1' ? submit() : done(null)); };
     d.addEventListener('click', on);
     $('#pf').addEventListener('submit', e => { e.preventDefault(); submit(); });
-    d.addEventListener('close', () => done(null), { once: true });
+    if (hint) $('#pIn').addEventListener('input', () => { $('#pHint').textContent = hint($('#pIn').value); $('#pErr').hidden = true; $('#pIn').classList.remove('err'); });
+    const onClose = () => { if (!d.open) { d.removeEventListener('close', onClose); done(null); } };
+    d.addEventListener('close', onClose);
     $('#pIn').focus();
   });
 }
@@ -829,15 +879,28 @@ function fieldForm(d) {
     <div class="pf">${d.isNew ? '' : `<button class="icbtn" data-act="move" data-id="${d.id}" aria-label="다른 폴더로 이동" title="다른 폴더로 이동">${ic('move')}</button><button class="icbtn" data-act="delete" aria-label="삭제" title="삭제" style="color:var(--danger)">${ic('trash')}</button>`}
       <span class="sp"></span><button class="btn" data-act="cancel">취소</button><button class="btn primary" data-act="save">저장</button></div>`;
 }
+// 새 폴더: 'a/b/c'처럼 쓰면 없는 단계만 만든다. 여러 단계를 쓰면 마지막 폴더로 들어간다
 function newFolder() {
-  return promptDialog(ui.path ? `'${S.nodeById(wdoc, ui.path)?.name}' 안에 새 폴더` : '새 폴더', '폴더 이름', '', {
-    okLabel: '만들기',
-    validate: v => (S.nameTaken(wdoc, ui.path, 'folder', v) ? '같은 이름의 폴더가 이미 있습니다' : null),
-  }).then(name => {
-    if (!name) return;
-    const r = S.createNode(wdoc, ui.path, 'folder', { name });
+  const base = S.nodeById(wdoc, ui.path);
+  const hint = v => {
+    const p = S.planPath(wdoc, ui.path, v);
+    if (!p.segments.length) return '/로 이어 쓰면 여러 단계를 한 번에 만듭니다. 이미 있는 폴더는 그대로 씁니다';
+    if (p.error) return p.error;
+    if (!p.toCreate.length) return '이미 있는 폴더입니다. 그 폴더로 이동합니다';
+    return `새로 만들 폴더 ${p.toCreate.length}개: ${p.toCreate.join(' › ')}${p.existing.length ? ` (기존 ${p.existing.map(n => n.name).join(' › ')} 아래)` : ''}`;
+  };
+  return promptDialog(base ? `'${base.name}' 안에 새 폴더` : '새 폴더', '폴더 이름', '', {
+    okLabel: '만들기', maxlength: 600, placeholder: '예: 삼성증권/HIWARE/ServerEDR', hint,
+    validate: v => S.planPath(wdoc, ui.path, v).error,
+  }).then(text => {
+    if (!text) return;
+    const multi = S.splitPath(text).length > 1;
+    const r = S.createPath(wdoc, ui.path, text);
     if (r.error) { toast(r.error); return; }
-    save('work'); renderAll();
+    if (multi || !r.created.length) { ui.path = r.node.id; ui.hl = null; ui.revealed.clear(); }
+    if (r.created.length) save('work');
+    renderAll();
+    toast(r.created.length ? `폴더 ${r.created.length}개를 만들었습니다` : '이미 있는 폴더로 이동했습니다');
   });
 }
 function moveDialog(node) {
@@ -864,7 +927,8 @@ function moveDialog(node) {
     toast(`${['업무', ...pathNames(target)].join(' › ')}(으)로 옮겼습니다`);
   };
   d.addEventListener('click', on);
-  d.addEventListener('close', () => d.removeEventListener('click', on), { once: true });
+  const offClose = () => { if (!d.open) { d.removeEventListener('click', on); d.removeEventListener('close', offClose); } };
+  d.addEventListener('close', offClose);
 }
 
 // =====================================================================
@@ -988,22 +1052,39 @@ $('#iconFile').addEventListener('change', async e => {
 });
 
 // ---------- 설정 ----------
+function driveSection() {
+  const st = Sync.getState();
+  if (!st.signedIn) return `<div class="menu"><button class="mi" data-s="drive-connect">${ic('link')}Google Drive 연결<span class="sub">PC·모바일 동기화</span></button></div>`;
+  return `<div class="menu">
+      <button class="mi" data-s="drive-sync">${ic('link')}지금 동기화<span class="sub">${esc(st.lastSync ? '마지막 ' + st.lastSync : '')}</span></button>
+      <button class="mi" data-s="drive-off">${ic('x')}이 기기에서 Drive 연결 끊기</button>
+    </div>`;
+}
 function openSettings() {
-  openDialog('설정', `<div class="menu">
+  openDialog('설정', `${driveSection()}<div class="menu">
       <button class="mi" data-s="pin">${ic('key')}PIN 변경</button>
       <button class="mi" data-s="recovery">${ic('shield')}복구 키 다시 만들기</button>
       <button class="mi" data-s="lock">${ic('lock')}지금 잠그기<span class="sub">5분 무조작 시 자동</span></button>
       <button class="mi danger" data-s="wipe">${ic('trash')}이 기기의 데이터 삭제</button>
     </div>
     <div><div class="kv"><span>버전</span><span>${VERSION} (1차 테스트)</span></div>
-      <div class="kv"><span>저장 위치</span><span>이 기기만 (동기화는 M3)</span></div>
+      <div class="kv"><span>저장 위치</span><span>${Sync.isSignedIn() ? '이 기기 + Google Drive (암호문)' : '이 기기만'}</span></div>
       <div class="kv"><span>검색 바로가기</span><span>/ 또는 Ctrl+K</span></div>
       <div class="kv"><span>금고 만든 날</span><span>${esc(fmtDate(meta.created_at))}</span></div></div>`);
 }
 dlg().addEventListener('click', e => {
   const b = e.target.closest('[data-s]');
   if (!b) return;
-  ({ pin: dlgPin, recovery: dlgRecovery, lock: () => { closeDialog(); lock(); }, wipe: dlgWipe })[b.dataset.s]();
+  ({
+    pin: dlgPin, recovery: dlgRecovery, lock: () => { closeDialog(); lock(); }, wipe: dlgWipe,
+    'drive-connect': () => { closeDialog(); connectDrive(); },
+    'drive-sync': () => { closeDialog(); Sync.syncNow(); },
+    'drive-off': async () => {
+      closeDialog();
+      if (!(await confirmDialog('Drive 연결 끊기', '이 기기에서만 동기화를 멈춥니다. 이 기기와 Drive의 데이터는 그대로 남습니다.', '연결 끊기'))) return;
+      Sync.signOut(); toast('이 기기에서 Drive 연결을 끊었습니다');
+    },
+  })[b.dataset.s]();
 });
 const pinInput = (id, label) => `<div><label class="fl" for="${id}">${label}</label><input class="in" id="${id}" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" style="letter-spacing:.4em;font-family:var(--mono)"></div>`;
 function dlgPin() {
@@ -1018,7 +1099,7 @@ function dlgPin() {
     try { await C.unlockWithPin(meta, cur); } catch { $('#pGo').disabled = false; return err('현재 PIN이 맞지 않습니다'); }
     const next = await C.rewrapPin(meta, dek, n1);
     if (!(await S.put('meta', next))) { $('#pGo').disabled = false; return err('저장하지 못했습니다'); }
-    meta = next; bc?.postMessage({ type: 'meta', tab: TAB_ID });
+    meta = next; bc?.postMessage({ type: 'meta', tab: TAB_ID }); Sync.schedule(500);
     closeDialog(); toast('PIN을 바꿨습니다');
   };
   $('#pGo').addEventListener('click', go);
@@ -1044,7 +1125,7 @@ function dlgRecovery() {
     $('#rcSave').addEventListener('click', async () => {
       if ($('#rcHead').value.toUpperCase().trim() !== recovery.slice(0, 4)) { const e = $('#rcErr2'); e.textContent = '앞 4자리가 맞지 않습니다'; e.hidden = false; return; }
       if (!(await S.put('meta', next))) { toast('저장하지 못했습니다'); return; }
-      meta = next; bc?.postMessage({ type: 'meta', tab: TAB_ID });
+      meta = next; bc?.postMessage({ type: 'meta', tab: TAB_ID }); Sync.schedule(500);
       closeDialog(); toast('새 복구 키로 바꿨습니다');
     });
   };
@@ -1168,6 +1249,15 @@ document.addEventListener('click', async e => {
       return;
     }
     case 'lock': return lock();
+    case 'sync-label': {
+      const st = Sync.getState().status;
+      if (st === 'off') return connectDrive();
+      if (st === 'needs-auth') return connectDrive();
+      if (st === 'error') return syncErrorDialog();
+      if (st === 'conflict') return conflictDialog();
+      if (st !== 'syncing' && st !== 'offline') Sync.syncNow();
+      return;
+    }
     case 'settings': return openSettings();
     case 'icon-up': $('#iconFile').click(); return;
     case 'icon-clear': {
@@ -1237,6 +1327,74 @@ document.addEventListener('keydown', async e => {
 });
 matchMedia('(min-width:700px)').addEventListener('change', () => { if (unlocked) renderPanel(); });
 bindProviderPanel();
+
+// ---------- Drive 연결 / 다른 금고 ----------
+async function connectDrive() {
+  if (await Sync.signIn()) { toast('Google Drive에 연결했습니다'); Sync.syncNow(); }
+  else toast('Google 로그인을 하지 못했습니다. 팝업 차단을 확인하세요');
+}
+function syncErrorDialog() {
+  const st = Sync.getState();
+  openDialog('동기화 오류', `<p>${esc(st.detail || '알 수 없는 오류')}</p><p>이 기기의 데이터는 그대로 저장되어 있습니다.</p>`,
+    `<button class="btn" data-dlg="close">닫기</button><button class="btn primary" id="retry">다시 시도</button>`);
+  $('#retry').addEventListener('click', () => { closeDialog(); Sync.syncNow(); });
+}
+let conflictMeta = null;
+function conflictDialog() {
+  if (!unlocked) return;
+  openDialog('Drive에 다른 금고가 있습니다', `<p>Drive의 금고는 다른 기기에서 따로 만든 금고입니다. 이 기기의 금고와 열쇠가 달라 합칠 수 없어서 동기화를 멈췄습니다.</p>
+    <div class="menu">
+      <button class="mi" data-c="use-remote">${ic('link')}<span><b>Drive 금고로 바꾸기</b><br><small class="hint">이 기기의 데이터를 지우고 Drive 금고를 받습니다. 다른 기기의 PIN으로 엽니다.</small></span></button>
+      <button class="mi danger" data-c="use-local">${ic('warn')}<span><b>이 기기 금고로 Drive 덮어쓰기</b><br><small class="hint">다른 기기는 Drive 금고로 다시 등록해야 합니다. 기존 Drive 파일은 im-replaced-… 이름으로 남깁니다.</small></span></button>
+    </div>`, `<button class="btn" data-dlg="close">나중에</button>`);
+}
+dlg().addEventListener('click', async e => {
+  const b = e.target.closest('[data-c]');
+  if (!b) return;
+  closeDialog();
+  if (b.dataset.c === 'use-remote') {
+    if (!(await confirmDialog('Drive 금고로 바꾸기', '이 기기의 계정·메모·업무 데이터가 지워지고 Drive 금고로 바뀝니다. 되돌릴 수 없습니다.', '바꾸기', true))) return;
+    let v;
+    try { v = await Sync.fetchVault(); } catch (err) { toast('Drive 금고를 받지 못했습니다'); return; }
+    if (!v) { toast('Drive 금고가 없어졌습니다. 다시 동기화합니다'); Sync.clearConflict(); Sync.syncNow(); return; }
+    unlocked = false; clearTimeout(saveTimer); dirty.clear();
+    await saving;
+    clearInterval(idleTimer); dek = null; pdoc = null; wdoc = null;
+    ui.sel = null; ui.draft = null; ui.revealed.clear(); ui.path = null; clearSearch(false);
+    for (const id of ['#side', '#chips', '#bar', '#list', '#panel']) $(id).innerHTML = '';
+    document.body.classList.remove('sheet-open'); document.body.classList.add('no-sel');
+    await storeVault(v);
+    for (const k of ['im-fid-meta', 'im-fid-personal', 'im-fid-work']) { try { localStorage.removeItem(k); } catch { /* 무시 */ } }
+    Sync.clearConflict();
+    bc?.postMessage({ type: 'unlocked', tab: TAB_ID });
+    lockScreen('Drive 금고로 바꿨습니다. 그 금고의 PIN을 입력하세요');
+  } else if (b.dataset.c === 'use-local') {
+    if (!(await confirmDialog('Drive 덮어쓰기', 'Drive의 금고를 이 기기의 금고로 바꿉니다. Drive 금고를 쓰던 다른 기기는 나중에 Drive 금고로 다시 등록해야 합니다.', '덮어쓰기', true))) return;
+    await flush(true); await saving;
+    try {
+      await Sync.overwriteRemote({ meta, personal: await S.get('personal'), work: await S.get('work') });
+      toast('Drive를 이 기기 금고로 덮어썼습니다');
+      Sync.syncNow();
+    } catch (err) { toast('덮어쓰지 못했습니다: ' + err.message); }
+  }
+});
+
+Sync.init({
+  get: () => ({ unlocked, meta, dek, personal: pdoc, work: wdoc }),
+  applyMeta: async m => { meta = m; await S.put('meta', m); bc?.postMessage({ type: 'meta', tab: TAB_ID }); },
+  applyDoc: async (kind, doc) => {
+    if (!unlocked) return;
+    if (kind === 'personal') { for (const k of ['accounts', 'notes', 'providers', 'social_accounts']) doc[k] ||= []; pdoc = doc; }
+    else { doc.nodes ||= []; wdoc = doc; }
+    dirty.add(kind);
+    await flush(true);
+    if (ui.draft) { readForm(); renderNav(); renderBar(); renderList(); }
+    else if (!dlg().open) renderAll();
+    else { renderNav(); renderList(); }
+  },
+  onConflict: m => { conflictMeta = m; conflictDialog(); },
+  onStatus: () => renderSaveLabel(),
+});
 
 // ---------- 시작 ----------
 async function boot() {
