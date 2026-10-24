@@ -212,3 +212,86 @@ export const put = (key, value) => putMany({ [key]: value });
 export async function clearAll() {
   try { await tx('readwrite', s => s.clear()); } catch { /* 무시 */ }
 }
+
+// ---------- 업무용 트리 (M2) ----------
+// 노드: { id: 'W-…', parent_id, type: 'folder'|'field', name, value, masked, created_at, updated_at, deleted_at }
+export const QUICK_KEYS = [
+  { key: 'ID', masked: false }, { key: 'PW', masked: true }, { key: 'IP', masked: false },
+  { key: 'URL', masked: false }, { key: 'PK', masked: true },
+];
+const sameName = (a, b) => String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+export const nodeById = (doc, id) => (id ? live(doc.nodes).find(n => n.id === id) || null : null);
+export function childrenOf(doc, parentId) {
+  const kids = live(doc.nodes).filter(n => (n.parent_id || null) === (parentId || null));
+  const by = (a, b) => cmpText(a.name, b.name) || cmpText(a.created_at, b.created_at);
+  return { folders: kids.filter(n => n.type === 'folder').sort(by), fields: kids.filter(n => n.type === 'field').sort(by) };
+}
+// 최상위부터 해당 노드까지 (자기 자신 포함). 부모가 사라졌으면 거기서 끊는다
+export function pathOf(doc, id) {
+  const out = [], seen = new Set();
+  let cur = nodeById(doc, id);
+  while (cur && !seen.has(cur.id)) { out.unshift(cur); seen.add(cur.id); cur = nodeById(doc, cur.parent_id); }
+  return out;
+}
+export function descendantsOf(doc, id) {
+  const out = [], stack = [id], seen = new Set([id]);
+  while (stack.length) {
+    const pid = stack.pop();
+    for (const n of live(doc.nodes)) if (n.parent_id === pid && !seen.has(n.id)) { seen.add(n.id); out.push(n); stack.push(n.id); }
+  }
+  return out;
+}
+export function nameTaken(doc, parentId, type, name, exceptId = null) {
+  return live(doc.nodes).some(n => n.id !== exceptId && (n.parent_id || null) === (parentId || null) && n.type === type && sameName(n.name, name));
+}
+// 성공하면 { node }, 실패하면 { error }
+export function createNode(doc, parentId, type, fields = {}) {
+  const name = String(fields.name || '').trim().slice(0, 100);
+  if (!name) return { error: type === 'folder' ? '폴더 이름을 입력하세요' : 'key를 입력하세요' };
+  if (parentId && !nodeById(doc, parentId)) return { error: '상위 폴더가 없습니다' };
+  if (nameTaken(doc, parentId, type, name)) return { error: type === 'folder' ? '같은 이름의 폴더가 이미 있습니다' : '같은 key가 이미 있습니다' };
+  const ts = nowIso();
+  const node = { id: uniqueId('W-', doc.nodes), parent_id: parentId || null, type, name, created_at: ts, updated_at: ts, deleted_at: null };
+  if (type === 'field') { node.value = String(fields.value ?? ''); node.masked = fields.masked !== false; }
+  doc.nodes.push(node);
+  return { node };
+}
+export function updateNode(doc, node, patch) {
+  const next = { ...patch };
+  if ('name' in next) {
+    next.name = String(next.name || '').trim().slice(0, 100);
+    if (!next.name) return { error: node.type === 'folder' ? '폴더 이름을 입력하세요' : 'key를 입력하세요' };
+    if (nameTaken(doc, node.parent_id, node.type, next.name, node.id)) return { error: node.type === 'folder' ? '같은 이름의 폴더가 이미 있습니다' : '같은 key가 이미 있습니다' };
+  }
+  if ('value' in next) next.value = String(next.value ?? '');
+  if ('masked' in next) next.masked = !!next.masked;
+  Object.assign(node, next, { updated_at: nowIso() });
+  return { node };
+}
+// 이동할 수 있는 대상인지: 자기 자신·하위 폴더 금지, 대상 폴더의 같은 이름 금지
+export function moveError(doc, node, targetId) {
+  targetId = targetId || null;
+  if ((node.parent_id || null) === targetId) return '지금 있는 폴더입니다';
+  if (targetId && !nodeById(doc, targetId)) return '대상 폴더가 없습니다';
+  if (node.type === 'folder' && (targetId === node.id || descendantsOf(doc, node.id).some(n => n.id === targetId))) return '자기 자신이나 하위 폴더로는 옮길 수 없습니다';
+  if (nameTaken(doc, targetId, node.type, node.name, node.id)) return node.type === 'folder' ? '대상 폴더에 같은 이름의 폴더가 있습니다' : '대상 폴더에 같은 key가 있습니다';
+  return null;
+}
+export function moveNode(doc, node, targetId) {
+  const err = moveError(doc, node, targetId);
+  if (err) return { error: err };
+  node.parent_id = targetId || null;
+  node.updated_at = nowIso();
+  return { node };
+}
+// 폴더면 하위 전체를 같은 시각으로 소프트 삭제. 지운 개수를 돌려준다
+export function deleteNode(doc, node) {
+  const all = [node, ...(node.type === 'folder' ? descendantsOf(doc, node.id) : [])];
+  const ts = nowIso();
+  for (const n of all) { n.deleted_at = ts; n.updated_at = ts; }
+  return all.length;
+}
+export function countUnder(doc, id) {
+  const d = descendantsOf(doc, id);
+  return { folders: d.filter(n => n.type === 'folder').length, fields: d.filter(n => n.type === 'field').length };
+}

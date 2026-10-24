@@ -26,6 +26,9 @@
     <header class="top">
       <h1>Info Manager</h1>
       <span class="sync" id="saveLabel">이 기기에 저장됨</span>
+      <button class="icbtn only-narrow" data-act="search-toggle" aria-label="검색">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>
+      </button>
       <button class="icbtn" data-act="lock" aria-label="지금 잠그기" title="지금 잠그기">
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>
       </button>
@@ -33,6 +36,11 @@
         <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h9M18 8h1M5 16h1M10 16h9"/><circle cx="16" cy="8" r="2"/><circle cx="8" cy="16" r="2"/></svg>
       </button>
     </header>
+    <div class="search" id="searchRow" role="search">
+      <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/></svg>
+      <input id="q" type="search" placeholder="검색: 서비스·별칭·ID·폴더·key" autocomplete="off" spellcheck="false" autocapitalize="off" enterkeyhint="search" aria-label="검색">
+      <button class="icbtn sm" id="qClear" data-act="search-clear" aria-label="검색 닫기" hidden><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
     <div class="chips only-narrow" id="chips" role="tablist" aria-label="영역"></div>
     <div class="bar" id="bar"></div>
     <section class="list" id="list" aria-label="목록"></section>
