@@ -870,7 +870,7 @@ function treeList() {
       else if (lines.length > 1 && !full) val = `<button class="tv tmore" data-act="tree-full" data-id="${x.id}" title="전체 보기">${esc(lines[0])}<small> …(+${lines.length - 1}줄)</small></button>`;
       else val = `<span class="tv ${lines.length > 1 ? 'multi' : ''}">${esc(x.value)}</span>`;
       const hide = x.masked && shown && x.value ? `<button class="icbtn xs" data-act="reveal" data-key="${key}" aria-label="${esc(x.name)} 가리기">${ic('eyeOff')}</button>` : '';
-      out.push(`<div class="tr tfld" role="treeitem" aria-level="${d + 1}" aria-current="${ui.hl === x.id || ui.draft?.id === x.id}">${indent(d)}<span class="tk">${x.masked ? ic('lock', 'kl') : ''}${esc(x.name)}</span><span class="tsep">:</span>${val}${hide}
+      out.push(`<div class="tr tfld" role="treeitem" aria-level="${d + 1}" aria-current="${ui.hl === x.id || ui.draft?.id === x.id}">${indent(d)}<span class="tsp"></span><span class="tk" title="${esc(x.name)}">${x.masked ? ic('lock', 'kl') : ''}${esc(x.name)}</span><span class="tsep">:</span>${val}${hide}
         <button class="icbtn xs" data-act="edit-field" data-id="${x.id}" aria-label="${esc(x.name)} 편집">${ic('edit')}</button></div>`);
     }
   };

@@ -292,8 +292,10 @@ textarea.in.hidev{-webkit-text-security:disc}
 .tt .tfi{width:15px;height:15px;color:var(--accent)}
 .tn{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tc{font-size:11.5px;color:var(--muted);flex:none}
-.tfld{padding-left:24px}
-.tk{display:inline-flex;align-items:center;gap:3px;font-weight:600;color:var(--ink2);flex:none;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tsp{width:14px;flex:none} /* 폴더 줄의 펼침 화살표 자리: 안내선은 그대로, 항목 이름만 폴더 아이콘 위치에 맞춘다 */
+.tk{display:block;font-weight:600;color:var(--ink2);flex:0 1 auto;min-width:3em;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tk .kl{vertical-align:-1px;margin-right:3px}
+.tfld>.icbtn,.tfld>.tsep,.tfld>.tv.tm{flex-shrink:0}
 .tk .kl{width:11px;height:11px;color:var(--muted)}
 .tsep{color:var(--muted);flex:none}
 .tv{flex:1;min-width:0;font-family:var(--mono);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;user-select:text;-webkit-user-select:text;text-align:left}
@@ -311,7 +313,6 @@ button.tv{border:0;background:none;padding:0;height:28px;color:inherit}
   .ind{width:12px}
   .ind::before{left:5px}
   .tree{font-size:12.5px}
-  .tk{max-width:45%}
 }
 
 /* ---------- 유틸 ---------- */
