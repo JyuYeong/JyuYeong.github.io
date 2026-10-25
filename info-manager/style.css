@@ -269,6 +269,51 @@ textarea.in.hidev{-webkit-text-security:disc}
 .xrow .xv{font-family:var(--mono)}
 @media (max-width:420px){.xrow{grid-template-columns:1fr auto}.xrow .xk{grid-column:1}.xrow .xvw{grid-column:1/-1;grid-row:2}.xrow>.icbtn{grid-column:2;grid-row:1}}
 
+/* ---------- M3.2: 트리 보기 ---------- */
+.mseg{display:inline-flex;border:1px solid var(--line2);border-radius:10px;overflow:hidden;background:var(--surface);flex:none}
+.mseg button{display:inline-flex;align-items:center;gap:5px;height:34px;padding:0 10px;border:0;border-left:1px solid var(--line2);background:none;font-size:13px;color:var(--ink2)}
+.mseg button:first-child{border-left:0}
+.mseg button .ic{width:15px;height:15px}
+.mseg button[aria-pressed="true"]{background:var(--accent-weak);color:var(--accent-ink);font-weight:600}
+.bar .mseg{margin-left:10px}
+.bar .mrow{flex-basis:100%;display:none;order:9}
+.icbtn.xs{width:30px;height:30px;border-radius:8px;flex:none}
+.icbtn.xs .ic{width:15px;height:15px}
+.tree{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:6px 4px;font-size:13px;line-height:1.35;flex:none}
+.tr{display:flex;align-items:center;gap:4px;min-height:32px;padding:0 4px 0 6px;border-radius:6px}
+.tr:hover{background:var(--hover)}
+.tr[aria-current="true"]{background:var(--accent-weak)}
+.ind{align-self:stretch;width:16px;flex:none;position:relative}
+.ind::before{content:"";position:absolute;left:7px;top:0;bottom:0;border-left:1px solid var(--line2)}
+.tt{display:flex;align-items:center;gap:4px;flex:1;min-width:0;height:32px;border:0;background:none;padding:0;text-align:left;font-size:13px;color:var(--ink)}
+.tt:disabled{cursor:default;opacity:1}
+.tt .car{width:14px;height:14px;color:var(--muted)}
+.tt:disabled .car{visibility:hidden}
+.tt .tfi{width:15px;height:15px;color:var(--accent)}
+.tn{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tc{font-size:11.5px;color:var(--muted);flex:none}
+.tfld{padding-left:24px}
+.tk{display:inline-flex;align-items:center;gap:3px;font-weight:600;color:var(--ink2);flex:none;max-width:40%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tk .kl{width:11px;height:11px;color:var(--muted)}
+.tsep{color:var(--muted);flex:none}
+.tv{flex:1;min-width:0;font-family:var(--mono);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;user-select:text;-webkit-user-select:text;text-align:left}
+.tv.multi{white-space:pre-wrap;overflow-wrap:anywhere;padding:7px 0}
+.tfld:has(.tv.multi){align-items:flex-start}
+.tfld:has(.tv.multi) .tk,.tfld:has(.tv.multi) .tsep{padding-top:7px}
+.tfld:has(.tv.multi) .icbtn{margin-top:1px}
+.tv.none{color:var(--muted);font-family:inherit}
+button.tv{border:0;background:none;padding:0;height:28px;color:inherit}
+.tv.tm{color:var(--mask);letter-spacing:.18em;flex:none;padding:0 8px;border:1px dashed var(--line2);border-radius:6px;height:24px;font-size:12px}
+.tv.tmore small{color:var(--muted);font-family:inherit}
+@media (max-width:519px){
+  .bar .mrow{display:flex}
+  .bar>.mseg{display:none}
+  .ind{width:12px}
+  .ind::before{left:5px}
+  .tree{font-size:12.5px}
+  .tk{max-width:45%}
+}
+
 /* ---------- 유틸 ---------- */
 .only-narrow{display:flex}
 
