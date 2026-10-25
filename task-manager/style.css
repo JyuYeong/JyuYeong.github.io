@@ -187,7 +187,21 @@ dialog[data-kind="filter"][open]{display:flex}
 .ticker.pos-bottom{border-top:1px solid var(--line)}
 .tk-track{display:flex;flex:none;white-space:nowrap;animation:tk-scroll var(--tk-dur,30s) linear infinite;will-change:transform}
 .ticker:hover .tk-track,.ticker.paused .tk-track{animation-play-state:paused}
-.tk-item{padding:0 14px}
+.tk-item{padding:0 14px;display:inline-flex;align-items:center}
+.tk-item.lv-normal{font-weight:500}
+.tk-item.lv-strong{font-weight:800}
+.tk-item.lv-urgent{font-weight:800}
+.tk-badge{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px 0 4px;border:1.5px solid currentColor;border-radius:999px}
+.tk-bang{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:currentColor;font-size:11px;line-height:1}
+.tk-bang{background:var(--tk-normal)!important;color:var(--tk-normal-bg)}
+.ticker.c-caution .tk-bang{background:var(--tk-caution)!important;color:var(--tk-caution-bg)}
+.ticker.c-must .tk-bang{background:var(--tk-must)!important;color:var(--tk-must-bg)}
+.lvseg{display:inline-flex;border:1px solid var(--line2);border-radius:8px;overflow:hidden}
+.lvseg button{height:32px;padding:0 10px;border:0;border-left:1px solid var(--line2);background:var(--surface);font-size:12.5px;color:var(--ink2)}
+.lvseg button:first-child{border-left:0}
+.lvseg button.lv-strong{font-weight:800}
+.lvseg button.lv-urgent{font-weight:800}
+.lvseg button[aria-pressed="true"]{background:var(--accent);color:var(--on-accent)}
 .tk-sep{opacity:.55}
 .tk-pause{position:absolute;right:0;top:0;bottom:0;display:none;align-items:center;gap:4px;padding:0 10px 0 12px;font-size:12px;background:inherit;box-shadow:-8px 0 8px -2px var(--tk-shadow,transparent)}
 .tk-pause .ic{width:14px;height:14px}

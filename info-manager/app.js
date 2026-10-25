@@ -4,7 +4,7 @@ import * as S from './store.js';
 import * as Q from './search.js';
 import * as Sync from './sync.js';
 
-export const VERSION = 'M3';
+export const VERSION = 'M3.1';
 const IDLE_MS = 5 * 60 * 1000;
 const MAX_FAILS = 5;
 const FAIL_WAIT_MS = 30 * 1000;
@@ -572,6 +572,7 @@ function accountView(a) {
     <div class="pb">
       ${a.aliases.length ? `<div><span class="fl">검색 별칭</span><div class="tags">${a.aliases.map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div></div>` : ''}
       ${login}
+      ${(a.extra || []).map((x, i) => `<div><span class="fl">${esc(x.key)}</span>${secretHtml(a.id + ':x' + i, x.value, { mono: true })}</div>`).join('')}
       <div><span class="fl">URL</span><div class="fv ${a.url ? '' : 'none'}">${a.url ? (href ? `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${esc(a.url)}</a>` : esc(a.url)) : '없음'}</div></div>
       <div><span class="fl">메모</span>${secretHtml(a.id + ':memo', a.memo, { multi: true })}</div>
       <div class="meta"><span>만든 날 ${esc(fmtDate(a.created_at))}</span><span>고친 날 ${esc(fmtDate(a.updated_at))}</span></div>
@@ -610,6 +611,14 @@ function accountForm(d) {
             <button type="button" class="icbtn" data-act="pw-eye" aria-label="${d.showPw ? '비밀번호 가리기' : '비밀번호 보기'}">${ic(d.showPw ? 'eyeOff' : 'eye')}</button></div></div>`}
       <div><label class="fl" for="fUrl">URL</label><input class="in" id="fUrl" maxlength="500" value="${esc(d.url)}" inputmode="url" autocapitalize="off" spellcheck="false" placeholder="예: https://claude.ai"></div>
       <div><label class="fl" for="fMemo">메모</label><textarea class="in" id="fMemo" maxlength="5000" spellcheck="false">${esc(d.memo)}</textarea></div>
+      <div><span class="fl">추가 항목</span>
+        <div class="xlist">${d.extra.map((x, i) => `<div class="xrow">
+          <input class="in xk" data-xi="${i}" maxlength="60" value="${esc(x.key)}" placeholder="KEY (예: 카드번호)" spellcheck="false" aria-label="추가 항목 ${i + 1} KEY">
+          <div class="inwrap xvw"><input class="in xv" data-xi="${i}" type="${x.shown ? 'text' : 'password'}" maxlength="2000" value="${esc(x.value)}" placeholder="값" autocomplete="new-password" spellcheck="false" aria-label="추가 항목 ${i + 1} 값">
+            <button type="button" class="icbtn" data-act="x-eye" data-xi="${i}" aria-label="${x.shown ? '값 가리기' : '값 보기'}">${ic(x.shown ? 'eyeOff' : 'eye')}</button></div>
+          <button type="button" class="icbtn sm" data-act="x-del" data-xi="${i}" aria-label="추가 항목 ${i + 1} 삭제">${ic('trash')}</button></div>`).join('')}</div>
+        <button type="button" class="btn" data-act="x-add">${ic('plus')}항목 추가</button>
+        <p class="hint">카드번호·인증서 비밀번호처럼 이 계정에 딸린 값을 자유롭게 넣습니다. 값은 모두 가려 두고 눌러야 보입니다.</p></div>
       <p class="note" id="formErr" hidden></p>
     </form>
     <div class="pf"><span class="sp"></span><button class="btn" data-act="cancel">취소</button><button class="btn primary" data-act="save">저장</button></div>`;
@@ -635,6 +644,8 @@ function readForm() {
     if ($('#fPw')) d.password = v('#fPw');
     d.url = v('#fUrl') ?? d.url;
     d.memo = v('#fMemo') ?? d.memo;
+    document.querySelectorAll('#form .xk').forEach(el => { const x = d.extra[+el.dataset.xi]; if (x) x.key = el.value; });
+    document.querySelectorAll('#form .xv').forEach(el => { const x = d.extra[+el.dataset.xi]; if (x) x.value = el.value; });
     const pending = (v('#fAlias') || '').trim();
     if (pending) { addAliases(pending); $('#fAlias').value = ''; }
   } else if (d.kind === 'field') {
@@ -727,7 +738,8 @@ function startDraft(kind, item) {
     const base = item || { service: '', aliases: [], login_type: 'direct', provider_id: null, social_account_id: null, login_id: '', password: '', url: '', memo: '' };
     ui.draft = { kind, isNew: !item, id: item?.id || null, orig: item ? structuredClone(item) : null, showPw: false,
       service: base.service, aliases: [...base.aliases], login_type: base.login_type, provider_id: base.provider_id, social_account_id: base.social_account_id,
-      login_id: base.login_id, password: base.password, url: base.url, memo: base.memo };
+      login_id: base.login_id, password: base.password, url: base.url, memo: base.memo,
+      extra: (base.extra || []).map(x => ({ key: x.key, value: x.value, shown: false })) };
   } else if (kind === 'field') {
     ui.draft = { kind, isNew: !item, id: item?.id || null, parent: item ? item.parent_id : ui.path, orig: item ? structuredClone(item) : null,
       name: item?.name || '', value: item?.value || '', masked: item ? item.masked : true, showVal: !item || !item.masked };
@@ -743,7 +755,8 @@ function draftDirty() {
   readForm();
   const o = d.orig || (d.kind === 'account' ? { service: '', aliases: [], login_type: 'direct', provider_id: null, social_account_id: null, login_id: '', password: '', url: '', memo: '' } : d.kind === 'field' ? { name: '', value: '', masked: true } : { title: '', body: '' });
   const keys = d.kind === 'account' ? ['service', 'login_type', 'provider_id', 'social_account_id', 'login_id', 'password', 'url', 'memo'] : d.kind === 'field' ? ['name', 'value', 'masked'] : ['title', 'body'];
-  return keys.some(k => (d[k] ?? '') !== (o[k] ?? '')) || (d.kind === 'account' && JSON.stringify(d.aliases) !== JSON.stringify(o.aliases));
+  return keys.some(k => (d[k] ?? '') !== (o[k] ?? '')) || (d.kind === 'account' && (JSON.stringify(d.aliases) !== JSON.stringify(o.aliases)
+    || JSON.stringify(d.extra.filter(x => x.key.trim() || x.value).map(x => [x.key.trim(), x.value])) !== JSON.stringify((o.extra || []).map(x => [x.key, x.value]))));
 }
 // 편집 중이면 버릴지 묻는다. 계속 진행해도 되면 true
 async function leaveDraft() {
@@ -762,7 +775,10 @@ function saveDraft() {
   const d = ui.draft;
   if (d.kind === 'account') {
     if (!d.service.trim()) return formError('서비스명을 입력하세요', '#fService');
-    const fields = { service: d.service, aliases: d.aliases, login_type: d.login_type, provider_id: d.provider_id, social_account_id: d.social_account_id, login_id: d.login_id, password: d.password, url: d.url, memo: d.memo };
+    const xErr = S.extraError(d.extra);
+    if (xErr) return formError(xErr);
+    const fields = { service: d.service, aliases: d.aliases, login_type: d.login_type, provider_id: d.provider_id, social_account_id: d.social_account_id, login_id: d.login_id, password: d.password, url: d.url, memo: d.memo,
+      extra: d.extra.map(x => ({ key: x.key, value: x.value })) };
     let a = d.id ? pdoc.accounts.find(x => x.id === d.id) : null;
     if (a) Object.assign(a, fields, { updated_at: S.nowIso() });
     else a = S.createAccount(pdoc, fields);
@@ -1208,6 +1224,9 @@ document.addEventListener('click', async e => {
       $(`[data-act="reveal"][data-key="${CSS.escape(k)}"]`)?.focus();
       return;
     }
+    case 'x-add': readForm(); ui.draft.extra.push({ key: '', value: '', shown: true }); rerenderForm(`#form .xk[data-xi="${ui.draft.extra.length - 1}"]`); return;
+    case 'x-del': readForm(); ui.draft.extra.splice(+b.dataset.xi, 1); rerenderForm(); return;
+    case 'x-eye': { readForm(); const x = ui.draft.extra[+b.dataset.xi]; if (x) x.shown = !x.shown; rerenderForm(`#form .xv[data-xi="${b.dataset.xi}"]`); return; }
     case 'pw-eye': readForm(); ui.draft.showPw = !ui.draft.showPw; rerenderForm('#fPw'); return;
     case 'delete': return deleteSelected();
     case 'open-folder':

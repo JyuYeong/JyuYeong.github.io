@@ -334,7 +334,7 @@ function renderTicker(force = false) {
   const now = S.nowKST();
   const items = (doc.ticker || []).filter(k => !k.deleted_at && S.tickerState(k, now) === 'on').sort(byCreated);
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const key = JSON.stringify([set.color, set.position, items.map(k => [k.id, k.text]), innerWidth, reduce]);
+  const key = JSON.stringify([set.color, set.position, items.map(k => [k.id, k.text, S.tickerLevel(k)]), innerWidth, reduce]);
   if (!force && key === tkKey) return;
   tkKey = key;
   const anchor = set.position === 'top' ? $('.bar') : $('#quick');
@@ -342,9 +342,13 @@ function renderTicker(force = false) {
   el.className = `ticker c-${set.color} pos-${set.position}${el.classList.contains('paused') ? ' paused' : ''}`;
   if (!items.length) { el.hidden = true; el.innerHTML = ''; return; }
   el.hidden = false;
-  const unit = `<span class="tk-unit" style="display:inline-flex">${items.map(k => `<span class="tk-item">${esc(k.text)}</span><span class="tk-sep">•</span>`).join('')}</span>`;
+  const itemHtml = k => {
+    const lv = S.tickerLevel(k);
+    return `<span class="tk-item lv-${lv}">${lv === 'urgent' ? `<span class="tk-badge"><b class="tk-bang">!</b>${esc(k.text)}</span>` : esc(k.text)}</span>`;
+  };
+  const unit = `<span class="tk-unit" style="display:inline-flex">${items.map(k => `${itemHtml(k)}<span class="tk-sep">•</span>`).join('')}</span>`;
   el.title = '누르면 일시정지 / 다시 재생';
-  el.innerHTML = `<div class="tk-track" aria-hidden="true">${unit}</div><span class="sr">알림: ${items.map(k => esc(k.text)).join(' / ')}</span><span class="tk-pause" aria-hidden="true">${ic('pause')}일시정지</span>`;
+  el.innerHTML = `<div class="tk-track" aria-hidden="true">${unit}</div><span class="sr">알림: ${items.map(k => (S.tickerLevel(k) === 'normal' ? '' : S.TICKER_LEVELS[S.tickerLevel(k)] + ' ') + esc(k.text)).join(' / ')}</span><span class="tk-pause" aria-hidden="true">${ic('pause')}일시정지</span>`;
   if (reduce) return; // 동작 줄이기: 흐르지 않고 한 번만 표시
   const track = el.firstElementChild;
   const w = track.firstElementChild.getBoundingClientRect().width || 1;
@@ -366,14 +370,14 @@ function tickerHtml() {
     const fld = (f, type, label, extra = '') => `<input class="in" type="${type}" data-kid="${k.id}" data-kf="${f}" value="${esc(k[f] || '')}" aria-label="${label}"${extra}>`;
     return `<div class="tkrow${k.enabled ? '' : ' off'}" data-row="${k.id}">
       <div class="r1"><button type="button" class="sw" role="switch" data-act="tk-toggle" data-id="${k.id}" aria-checked="${k.enabled}" aria-label="띠에 표시"><i></i></button>${fld('text', 'text', '문장', ' maxlength="120"')}<button type="button" class="icbtn sm" data-act="tk-del" data-id="${k.id}" aria-label="문장 삭제">${ic('trash')}</button></div>
-      <div class="r2"><span class="tw">종료일${fld('expire_date', 'date', '표시 종료일')}</span><span class="tw">매일${fld('daily_from', 'time', '표시 시작 시각')}~${fld('daily_to', 'time', '표시 종료 시각')}</span><span class="tkst ${cls}">${lbl}</span></div>
+      <div class="r2"><span class="tw">강조<span class="lvseg" role="group" aria-label="강조">${Object.entries(S.TICKER_LEVELS).map(([v, l]) => `<button type="button" data-act="tk-level" data-id="${k.id}" data-v="${v}" aria-pressed="${S.tickerLevel(k) === v}" class="lv-${v}">${l}</button>`).join('')}</span></span><span class="tw">종료일${fld('expire_date', 'date', '표시 종료일')}</span><span class="tw">매일${fld('daily_from', 'time', '표시 시작 시각')}~${fld('daily_to', 'time', '표시 종료 시각')}</span><span class="tkst ${cls}">${lbl}</span></div>
     </div>`;
   }).join('');
   return `<div class="fsec"><span class="fl">띠 색상</span>${seg('tkcolor', Object.entries(S.TICKER_COLORS).map(([v, l]) => [v, sw(v) + l]), set.color)}</div>
     <div class="fsec"><span class="fl">띠 위치</span>${seg('tkpos', [['top', '위'], ['bottom', '아래']], set.position)}</div>
     <div class="fsec"><span class="fl">문장</span><div class="tkset">${rows || '<p class="hint">아직 문장이 없습니다.</p>'}</div></div>
     <form class="prow" id="tkForm" autocomplete="off"><input class="in" name="text" maxlength="120" placeholder="새 문장" aria-label="새 문장" required><button class="btn primary" type="submit">추가</button></form>
-    <p class="hint">켜 둔 문장만 띠에 흐릅니다. 종료일이 지나면 띠에서 사라지고 "만료"로 남습니다. 매일 시간대는 시작과 끝을 모두 넣어야 적용되고, 시작이 끝보다 늦으면 자정을 넘깁니다(예: 22:00~06:00). 띠를 누르면 일시정지합니다.</p>`;
+    <p class="hint">켜 둔 문장만 띠에 흐릅니다. 강조는 보통·강조(굵게)·긴급(굵게 + 테두리 + !) 중에서 고릅니다. 종료일이 지나면 띠에서 사라지고 "만료"로 남습니다. 매일 시간대는 시작과 끝을 모두 넣어야 적용되고, 시작이 끝보다 늦으면 자정을 넘깁니다(예: 22:00~06:00). 띠를 누르면 일시정지합니다.</p>`;
 }
 function refreshTickerDlg(focusSel) {
   if (!dlg.open || dlg.dataset.kind !== 'ticker') return;
@@ -602,6 +606,14 @@ document.addEventListener('click', async e => {
       if (!k) break;
       k.enabled = !k.enabled; k.updated_at = new Date().toISOString();
       persist(); renderTicker(); updateTickerRow(k);
+      break;
+    }
+    case 'tk-level': {
+      const k = tickerById(id);
+      if (!k || S.tickerLevel(k) === el.dataset.v) break;
+      k.level = el.dataset.v; k.updated_at = new Date().toISOString();
+      persist(); renderTicker();
+      el.parentElement.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b === el)));
       break;
     }
     case 'tk-del': {

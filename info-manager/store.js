@@ -64,7 +64,7 @@ export function createAccount(doc, fields = {}) {
   const a = {
     id: uniqueId('A-', doc.accounts),
     service: '', aliases: [], login_type: 'direct', provider_id: null, social_account_id: null,
-    login_id: '', password: '', url: '', memo: '',
+    login_id: '', password: '', url: '', memo: '', extra: [],
     created_at: ts, updated_at: ts, deleted_at: null,
     ...fields,
   };
@@ -103,7 +103,20 @@ export function softDelete(item) {
 }
 
 // 계정 저장 규칙: 소셜 로그인이면 ID·PW를 비운다, 별칭은 공백 제거·중복 제거
+// 추가 항목 확인: KEY 없이 값만 있거나 같은 KEY가 두 번이면 오류 문구, 아니면 null
+export function extraError(extra) {
+  const seen = new Set();
+  for (const x of extra || []) {
+    const k = String(x.key || '').trim(), v = String(x.value ?? '');
+    if (!k && !v) continue;
+    if (!k) return '추가 항목의 KEY를 입력하세요';
+    if (seen.has(k.toLowerCase())) return `추가 항목에 같은 KEY(${k})가 두 번 있습니다`;
+    seen.add(k.toLowerCase());
+  }
+  return null;
+}
 export function normalizeAccount(a) {
+  a.extra = (a.extra || []).map(x => ({ key: String(x.key || '').trim().slice(0, 60), value: String(x.value ?? '').slice(0, 2000) })).filter(x => x.key);
   a.service = String(a.service || '').trim().slice(0, 80);
   a.aliases = [...new Map((a.aliases || []).map(s => String(s).trim().slice(0, 40)).filter(Boolean).map(s => [s.toLowerCase(), s])).values()];
   a.url = String(a.url || '').trim();

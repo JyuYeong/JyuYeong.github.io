@@ -143,6 +143,8 @@ export function wouldCycle(doc, taskId, predId) {
 
 // ---------- 티커 (M3.2) ----------
 export const TICKER_COLORS = { normal: '일반', caution: '주의', must: '필독' };
+export const TICKER_LEVELS = { normal: '보통', strong: '강조', urgent: '긴급' }; // 문장별 강조 (M3.3)
+export const tickerLevel = k => (TICKER_LEVELS[k?.level] ? k.level : 'normal');
 const TK_ID = 'S-ticker';
 const TK_DEFAULT = { id: TK_ID, color: 'normal', position: 'bottom', updated_at: '', deleted_at: null };
 
@@ -164,7 +166,7 @@ export function createTicker(doc, text) {
   const ts = nowIso();
   const k = {
     id: uniqueId('K-', new Set(doc.ticker.map(x => x.id))),
-    text, enabled: true, expire_date: null, daily_from: null, daily_to: null,
+    text, enabled: true, level: 'normal', expire_date: null, daily_from: null, daily_to: null,
     created_at: ts, updated_at: ts, deleted_at: null,
   };
   doc.ticker.push(k);

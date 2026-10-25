@@ -261,6 +261,14 @@ textarea.in.hidev{-webkit-text-security:disc}
   .bar h2{max-width:40%}
 }
 
+/* ---------- M3.1: 계정 추가 항목 ---------- */
+.xlist{display:flex;flex-direction:column;gap:8px;margin-bottom:8px}
+.xlist:empty{display:none}
+.xrow{display:grid;grid-template-columns:minmax(90px,38%) 1fr auto;gap:6px;align-items:center}
+.xrow .in{height:42px;font-size:15px}
+.xrow .xv{font-family:var(--mono)}
+@media (max-width:420px){.xrow{grid-template-columns:1fr auto}.xrow .xk{grid-column:1}.xrow .xvw{grid-column:1/-1;grid-row:2}.xrow>.icbtn{grid-column:2;grid-row:1}}
+
 /* ---------- 유틸 ---------- */
 .only-narrow{display:flex}
 

@@ -49,7 +49,7 @@ export function search(q, { pdoc, wdoc, providerName = () => '', socialLabel = (
   const push = (arr, entry, nameOf) => { if (entry.score >= 0) arr.push(entry); arr.sort((a, b) => a.score - b.score || cmpText(nameOf(a), nameOf(b))); };
   for (const a of live(pdoc?.accounts)) {
     const primary = [a.service, ...(a.aliases || []), initials(a.service)].filter(Boolean);
-    const others = [a.login_id, a.url, a.login_type === 'social' ? providerName(a.provider_id) : '', a.login_type === 'social' ? socialLabel(a.social_account_id) : ''].filter(Boolean);
+    const others = [a.login_id, a.url, ...(a.extra || []).map(x => x.key), a.login_type === 'social' ? providerName(a.provider_id) : '', a.login_type === 'social' ? socialLabel(a.social_account_id) : ''].filter(Boolean);
     push(out.accounts, { item: a, score: score(ts, primary, others) }, e => e.item.service);
   }
   for (const n of live(pdoc?.notes)) push(out.notes, { item: n, score: score(ts, [n.title], []) }, e => e.item.title);
