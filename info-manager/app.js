@@ -4,7 +4,7 @@ import * as S from './store.js';
 import * as Q from './search.js';
 import * as Sync from './sync.js';
 
-export const VERSION = 'M3.1';
+export const VERSION = 'M3.2';
 const IDLE_MS = 5 * 60 * 1000;
 const MAX_FAILS = 5;
 const FAIL_WAIT_MS = 30 * 1000;
@@ -39,6 +39,11 @@ const P = {
   field: '<path d="M5 7h14M5 12h9M5 17h6"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>',
   move: '<path d="M4 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2z"/><path d="M10 13h5M13 10.5l2.5 2.5-2.5 2.5"/>',
+  chevD: '<path d="M7 10l5 5 5-5"/>',
+  expand: '<path d="M7 9l5-5 5 5M7 15l5 5 5-5"/>',
+  collapse: '<path d="M7 4l5 5 5-5M7 20l5-5 5 5"/>',
+  enter: '<path d="M14 4h4a2 2 0 012 2v12a2 2 0 01-2 2h-4"/><path d="M4 12h11M11 8l4 4-4 4"/>',
+  branch: '<path d="M4 5h6M7 5v14h5M7 12h5"/><rect x="13" y="10" width="7" height="4" rx="1"/><rect x="13" y="17" width="7" height="4" rx="1"/>',
   home: '<path d="M4 11l8-6 8 6v8a1 1 0 01-1 1h-4v-5h-6v5H5a1 1 0 01-1-1z"/>',
   shield: '<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/>',
 };
@@ -52,7 +57,8 @@ let dek = null;     // 데이터 키 (메모리에만)
 let pdoc = null;    // 개인용 문서 (복호화본)
 let wdoc = null;    // 업무용 문서 (M2에서 사용)
 let unlocked = false;
-const ui = { view: 'accounts', sel: null, draft: null, revealed: new Set(), path: null, hl: null, q: '', searchOpen: false };
+const ui = { view: 'accounts', sel: null, draft: null, revealed: new Set(), path: null, hl: null, q: '', searchOpen: false, workMode: 'folder', open: new Set() };
+try { if (localStorage.getItem('im-workview') === 'tree') ui.workMode = 'tree'; } catch { /* 무시 */ }
 const VIEWS = { accounts: '계정', notes: '보안 메모', work: '업무', social: '소셜 관리' };
 
 // ---------- 다른 탭 ----------
@@ -406,7 +412,7 @@ function enterApp(msg) {
   pad = null;
   gate.hidden = true; gate.innerHTML = '';
   $('#app').hidden = false;
-  ui.sel = null; ui.draft = null; ui.revealed.clear(); ui.path = null; clearSearch(false);
+  ui.sel = null; ui.draft = null; ui.revealed.clear(); ui.path = null; ui.open.clear(); clearSearch(false);
   lastAct = Date.now();
   clearInterval(idleTimer);
   idleTimer = setInterval(checkIdle, 10000);
@@ -424,7 +430,7 @@ async function lock(msg = '') {
   clearInterval(idleTimer);
   closeDialog();
   dek = null; pdoc = null; wdoc = null;
-  ui.sel = null; ui.draft = null; ui.revealed.clear(); ui.path = null; clearSearch(false);
+  ui.sel = null; ui.draft = null; ui.revealed.clear(); ui.path = null; ui.open.clear(); clearSearch(false);
   for (const id of ['#side', '#chips', '#bar', '#list', '#panel']) $(id).innerHTML = '';
   document.body.classList.remove('sheet-open');
   document.body.classList.add('no-sel');
@@ -824,15 +830,61 @@ function crumbsHtml() {
   path.forEach((n, i) => parts.push(`<span class="csep" aria-hidden="true">›</span><button class="crumb" data-act="go-folder" data-id="${n.id}" ${i === path.length - 1 ? 'aria-current="page"' : ''}>${esc(n.name)}</button>`));
   return `<nav class="crumbs" aria-label="현재 위치">${parts.join('')}</nav>`;
 }
+const modeSeg = () => `<span class="mseg" role="group" aria-label="보기 방식"><button data-act="work-mode" data-v="folder" aria-pressed="${ui.workMode === 'folder'}" title="폴더 보기">${ic('folder')}<span>폴더</span></button><button data-act="work-mode" data-v="tree" aria-pressed="${ui.workMode === 'tree'}" title="트리 보기">${ic('branch')}<span>트리</span></button></span>`;
 function workBar() {
   if (ui.path && !S.nodeById(wdoc, ui.path)) ui.path = null;
+  if (ui.workMode === 'tree') {
+    return `<h2>업무</h2>${modeSeg()}<span class="mrow">${modeSeg()}</span>
+      <span class="acts"><button class="icbtn" data-act="tree-all" data-v="1" aria-label="모두 펼치기" title="모두 펼치기">${ic('expand')}</button><button class="icbtn" data-act="tree-all" data-v="0" aria-label="모두 접기" title="모두 접기">${ic('collapse')}</button>
+      <button class="btn" data-act="add-folder">${ic('folderPlus')}폴더</button></span>`;
+  }
   const cur = S.nodeById(wdoc, ui.path);
-  return `<h2>${esc(cur ? cur.name : '업무')}</h2>
+  return `<h2>${esc(cur ? cur.name : '업무')}</h2>${modeSeg()}
     <span class="acts">${cur ? `<button class="icbtn" data-act="folder-manage" aria-label="이 폴더 관리" title="이 폴더 관리 (이름 변경·이동·삭제)">${ic('edit')}</button>` : ''}
     <button class="btn" data-act="add-folder">${ic('folderPlus')}폴더</button><button class="btn primary" data-act="add-field">${ic('plus')}항목</button></span>
-    ${crumbsHtml()}`;
+    <span class="mrow">${modeSeg()}</span>${crumbsHtml()}`;
+}
+// 트리 보기: 처음엔 접혀 있고, 펼친 폴더의 하위만 그린다. 가린 값은 눌러야 보인다
+function treeList() {
+  const top = S.childrenOf(wdoc, null);
+  if (!top.folders.length && !top.fields.length) return workEmpty();
+  const out = [];
+  const indent = d => '<span class="ind"></span>'.repeat(d);
+  const walk = (pid, d) => {
+    const { folders, fields } = S.childrenOf(wdoc, pid);
+    for (const f of folders) {
+      const open = ui.open.has(f.id);
+      const kids = S.childrenOf(wdoc, f.id), n = kids.folders.length + kids.fields.length;
+      out.push(`<div class="tr tf" role="treeitem" aria-expanded="${open}" aria-level="${d + 1}">${indent(d)}
+        <button class="tt" data-act="tree-toggle" data-id="${f.id}" ${n ? '' : 'disabled'}>${ic(open ? 'chevD' : 'chevR', 'car')}${ic('folder', 'tfi')}<span class="tn">${esc(f.name)}</span>${n ? `<span class="tc">${n}</span>` : '<span class="tc">비어 있음</span>'}</button>
+        <button class="icbtn xs" data-act="tree-go" data-id="${f.id}" aria-label="${esc(f.name)} 폴더 열기" title="폴더 보기로 열기">${ic('enter')}</button></div>`);
+      if (open) walk(f.id, d + 1);
+    }
+    for (const x of fields) {
+      const key = x.id + ':v', shown = !x.masked || ui.revealed.has(key);
+      const full = ui.revealed.has(x.id + ':full');
+      const lines = x.value.split('\n');
+      let val;
+      if (!x.value) val = '<span class="tv none">값 없음</span>';
+      else if (!shown) val = `<button class="tv tm" data-act="reveal" data-key="${key}" aria-label="${esc(x.name)} 눌러서 보기">••••••</button>`;
+      else if (lines.length > 1 && !full) val = `<button class="tv tmore" data-act="tree-full" data-id="${x.id}" title="전체 보기">${esc(lines[0])}<small> …(+${lines.length - 1}줄)</small></button>`;
+      else val = `<span class="tv ${lines.length > 1 ? 'multi' : ''}">${esc(x.value)}</span>`;
+      const hide = x.masked && shown && x.value ? `<button class="icbtn xs" data-act="reveal" data-key="${key}" aria-label="${esc(x.name)} 가리기">${ic('eyeOff')}</button>` : '';
+      out.push(`<div class="tr tfld" role="treeitem" aria-level="${d + 1}" aria-current="${ui.hl === x.id || ui.draft?.id === x.id}">${indent(d)}<span class="tk">${x.masked ? ic('lock', 'kl') : ''}${esc(x.name)}</span><span class="tsep">:</span>${val}${hide}
+        <button class="icbtn xs" data-act="edit-field" data-id="${x.id}" aria-label="${esc(x.name)} 편집">${ic('edit')}</button></div>`);
+    }
+  };
+  walk(null, 0);
+  return `<div class="tree" role="tree" aria-label="업무 트리">${out.join('')}</div>`;
+}
+// 트리에서 이 노드가 보이도록 상위 폴더를 모두 펼친다
+function openAncestors(id) { for (const n of S.pathOf(wdoc, id).slice(0, -1)) ui.open.add(n.id); }
+function workEmpty() {
+  return `<div class="empty">${ic('tree')}<span>업무 정보를 폴더로 정리해 보세요</span><span class="hint">예: 고객사 › 시스템 › 대상 순서로 폴더를 만들고, 그 안에 ID·PW 같은 항목을 넣습니다</span>
+    <span class="btns"><button class="btn" data-act="add-folder">${ic('folderPlus')}폴더</button></span></div>`;
 }
 function workList() {
+  if (ui.workMode === 'tree') return treeList();
   const { folders, fields } = S.childrenOf(wdoc, ui.path);
   if (!folders.length && !fields.length) {
     return `<div class="empty">${ic('tree')}<span>${ui.path ? '비어 있는 폴더입니다' : '업무 정보를 폴더로 정리해 보세요'}</span>
@@ -897,9 +949,10 @@ function fieldForm(d) {
 }
 // 새 폴더: 'a/b/c'처럼 쓰면 없는 단계만 만든다. 여러 단계를 쓰면 마지막 폴더로 들어간다
 function newFolder() {
-  const base = S.nodeById(wdoc, ui.path);
+  const baseId = ui.workMode === 'tree' ? null : ui.path; // 트리 보기에서는 최상위 기준
+  const base = S.nodeById(wdoc, baseId);
   const hint = v => {
-    const p = S.planPath(wdoc, ui.path, v);
+    const p = S.planPath(wdoc, baseId, v);
     if (!p.segments.length) return '/로 이어 쓰면 여러 단계를 한 번에 만듭니다. 이미 있는 폴더는 그대로 씁니다';
     if (p.error) return p.error;
     if (!p.toCreate.length) return '이미 있는 폴더입니다. 그 폴더로 이동합니다';
@@ -907,13 +960,14 @@ function newFolder() {
   };
   return promptDialog(base ? `'${base.name}' 안에 새 폴더` : '새 폴더', '폴더 이름', '', {
     okLabel: '만들기', maxlength: 600, placeholder: '예: 삼성증권/HIWARE/ServerEDR', hint,
-    validate: v => S.planPath(wdoc, ui.path, v).error,
+    validate: v => S.planPath(wdoc, baseId, v).error,
   }).then(text => {
     if (!text) return;
     const multi = S.splitPath(text).length > 1;
-    const r = S.createPath(wdoc, ui.path, text);
+    const r = S.createPath(wdoc, baseId, text);
     if (r.error) { toast(r.error); return; }
-    if (multi || !r.created.length) { ui.path = r.node.id; ui.hl = null; ui.revealed.clear(); }
+    if (ui.workMode === 'tree') { openAncestors(r.node.id); ui.open.add(r.node.id); }
+    else if (multi || !r.created.length) { ui.path = r.node.id; ui.hl = null; ui.revealed.clear(); }
     if (r.created.length) save('work');
     renderAll();
     toast(r.created.length ? `폴더 ${r.created.length}개를 만들었습니다` : '이미 있는 폴더로 이동했습니다');
@@ -1229,6 +1283,29 @@ document.addEventListener('click', async e => {
     case 'x-eye': { readForm(); const x = ui.draft.extra[+b.dataset.xi]; if (x) x.shown = !x.shown; rerenderForm(`#form .xv[data-xi="${b.dataset.xi}"]`); return; }
     case 'pw-eye': readForm(); ui.draft.showPw = !ui.draft.showPw; rerenderForm('#fPw'); return;
     case 'delete': return deleteSelected();
+    case 'work-mode': {
+      if (ui.workMode === b.dataset.v || !(await leaveDraft())) return;
+      ui.workMode = b.dataset.v; ui.sel = null; ui.revealed.clear();
+      try { localStorage.setItem('im-workview', ui.workMode); } catch { /* 무시 */ }
+      if (ui.workMode === 'tree') { if (ui.path) { ui.open.add(ui.path); openAncestors(ui.path); } }
+      renderAll(); $('#list').scrollTop = 0;
+      return;
+    }
+    case 'tree-toggle': { const id = b.dataset.id; ui.open.has(id) ? ui.open.delete(id) : ui.open.add(id); const ls = $('#list').scrollTop; readForm(); renderList(); $('#list').scrollTop = ls; $(`[data-act="tree-toggle"][data-id="${id}"]`)?.focus(); return; }
+    case 'tree-all': {
+      if (b.dataset.v === '1') for (const n of S.live(wdoc.nodes)) { if (n.type === 'folder') ui.open.add(n.id); }
+      else ui.open.clear();
+      readForm(); renderList();
+      return;
+    }
+    case 'tree-full': { const k = b.dataset.id + ':full'; ui.revealed.add(k); const ls = $('#list').scrollTop; renderList(); $('#list').scrollTop = ls; return; }
+    case 'tree-go': {
+      if (!(await leaveDraft())) return;
+      ui.workMode = 'folder'; ui.path = b.dataset.id; ui.hl = null; ui.sel = null; ui.revealed.clear();
+      try { localStorage.setItem('im-workview', 'folder'); } catch { /* 무시 */ }
+      renderAll(); $('#list').scrollTop = 0;
+      return;
+    }
     case 'open-folder':
     case 'go-folder': {
       if (!(await leaveDraft())) return;
@@ -1261,6 +1338,7 @@ document.addEventListener('click', async e => {
         if (!n) return;
         ui.view = 'work';
         if (n.type === 'folder') ui.path = n.id; else { ui.path = n.parent_id; ui.hl = n.id; }
+        if (ui.workMode === 'tree') { openAncestors(n.id); if (n.type === 'folder') { ui.open.add(n.id); ui.hl = null; } }
       }
       renderAll();
       const t = $(`#list [aria-current="true"]`);
