@@ -144,6 +144,7 @@ export function validateExpense(doc, f) {
   if (f.cat2_id) {
     if (!subs.some(c => c.id === f.cat2_id)) return { error: '하위 카테고리를 다시 고르세요', field: 'cat2' };
   } else if (cat2sOf(doc, c1.id).length) return { error: '하위 카테고리를 고르세요', field: 'cat2' };
+  if (f.theme_id && !live(doc.themes).some(t => t.id === f.theme_id)) return { error: '테마를 다시 고르세요', field: 'theme' };
   return null;
 }
 const EXP_FIELDS = ['date', 'amount', 'payee', 'method_id', 'cat1_id', 'cat2_id', 'memo', 'perf_excluded', 'theme_id', 'fixed_id'];
@@ -229,6 +230,110 @@ export function suggestPayees(doc, q, limit = 8) {
   out.sort((a, b) => a.s - b.s || b.count - a.count || b.lastKey.localeCompare(a.lastKey));
   return out.slice(0, limit);
 }
+
+// ---------- 내역 필터 (M2) ----------
+// q: { ym: 'YYYY-MM' | null, themeId: null | 'none' | 'TH-..', method: '' | id, cat: '' | 카테고리 id(1·2단계), text: '' }
+export function filterExpenses(doc, q = {}) {
+  const t = String(q.text || '').trim().toLowerCase();
+  const tc = t && /^[ㄱ-ㅎ]+$/.test(t);
+  return live(doc.expenses).filter(e => {
+    if (q.ym && !e.date.startsWith(q.ym)) return false;
+    if (q.themeId === 'none' ? e.theme_id : q.themeId && e.theme_id !== q.themeId) return false;
+    if (q.method && e.method_id !== q.method) return false;
+    if (q.cat && e.cat1_id !== q.cat && e.cat2_id !== q.cat) return false;
+    if (t) {
+      const hay = `${e.payee} ${e.memo || ''}`.toLowerCase();
+      if (!hay.includes(t) && !(tc && chosung(e.payee).includes(t))) return false;
+    }
+    return true;
+  });
+}
+// 날짜 → 입력 순 (dir: 'desc' 최근 먼저)
+export function sortExpenses(list, dir = 'desc') {
+  const k = e => `${e.date}|${e.created_at || ''}`;
+  return list.sort((a, b) => (dir === 'asc' ? k(a).localeCompare(k(b)) : k(b).localeCompare(k(a))));
+}
+export const sumOf = list => list.reduce((s, e) => s + e.amount, 0);
+export const ymAdd = (ym, n) => { const [y, m] = ym.split('-').map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1)); return d.toISOString().slice(0, 7); };
+
+// ---------- 테마 (M2) ----------
+// 기간이 있는 지출 묶음. 지출당 0~1개
+export const themesOf = doc => live(doc.themes).sort((a, b) => b.start.localeCompare(a.start) || (b.created_at || '').localeCompare(a.created_at || ''));
+// 그 날짜를 포함하는 테마들 (최근에 시작한 것 먼저)
+export const themesForDate = (doc, date) => themesOf(doc).filter(t => t.start <= date && date <= t.end);
+export const themeForDate = (doc, date) => themesForDate(doc, date)[0] || null;
+export function themeError(doc, f, id = null) {
+  const name = String(f.name || '').trim();
+  if (!name) return '테마 이름을 입력하세요';
+  if (!isDate(f.start) || !isDate(f.end)) return '시작일과 종료일을 고르세요';
+  if (f.start > f.end) return '종료일이 시작일보다 빠릅니다';
+  if (live(doc.themes).some(t => t.id !== id && t.name.toLowerCase() === name.toLowerCase())) return '같은 이름의 테마가 있습니다';
+  return null;
+}
+export function saveTheme(doc, f, id = null) {
+  const err = themeError(doc, f, id);
+  if (err) return { error: err };
+  const ts = nowIso();
+  const fields = { name: String(f.name).trim().slice(0, 40), start: f.start, end: f.end, memo: String(f.memo || '').trim().slice(0, 200) };
+  let t = id ? live(doc.themes).find(x => x.id === id) : null;
+  if (t) Object.assign(t, fields, { updated_at: ts });
+  else { t = { id: uniqueId('TH-', doc.themes), ...fields, created_at: ts, updated_at: ts, deleted_at: null }; doc.themes.push(t); }
+  return { item: t };
+}
+// 테마 기간 안에서 아직 테마가 없는 지출
+export const unthemedInRange = (doc, t) => live(doc.expenses).filter(e => !e.theme_id && e.date >= t.start && e.date <= t.end);
+export function attachTheme(doc, t, list) {
+  const ts = nowIso();
+  for (const e of list) { e.theme_id = t.id; e.updated_at = ts; }
+  return list.length;
+}
+// 삭제: 붙어 있던 지출에서 떼어 낸다. 떼어 낸 수를 돌려준다
+export function deleteTheme(doc, t) {
+  const ts = nowIso();
+  t.deleted_at = ts; t.updated_at = ts;
+  let n = 0;
+  for (const e of doc.expenses) if (e.theme_id === t.id) { e.theme_id = null; e.updated_at = ts; n++; }
+  return n;
+}
+// 카테고리별 합계: [{ c1, total, subs: [{ c2, total }] }] (금액 큰 순)
+export function catTotals(doc, list) {
+  const m = new Map();
+  for (const e of list) {
+    const g = m.get(e.cat1_id) || { id: e.cat1_id, total: 0, subs: new Map() };
+    g.total += e.amount;
+    const k = e.cat2_id || '';
+    g.subs.set(k, (g.subs.get(k) || 0) + e.amount);
+    m.set(e.cat1_id, g);
+  }
+  return [...m.values()].sort((a, b) => b.total - a.total).map(g => ({ id: g.id, total: g.total, subs: [...g.subs].map(([id, total]) => ({ id: id || null, total })).sort((a, b) => b.total - a.total) }));
+}
+
+// ---------- 템플릿 (M2) ----------
+// 자주 쓰는 지출. 날짜는 쓰는 날 정하므로 담지 않는다. 금액은 비워 둘 수 있다
+export const templatesOf = doc => live(doc.templates).sort(byOrder);
+export function templateError(doc, f, id = null) {
+  const name = String(f.name || '').trim();
+  if (!name) return '템플릿 이름을 입력하세요';
+  if (live(doc.templates).some(t => t.id !== id && t.name.toLowerCase() === name.toLowerCase())) return '같은 이름의 템플릿이 있습니다';
+  if (!f.payee?.trim() && !f.amount && !f.method_id && !f.cat1_id) return '금액·지불처·지불방식·카테고리 중 하나는 있어야 합니다';
+  return null;
+}
+export function saveTemplate(doc, f, id = null) {
+  const err = templateError(doc, f, id);
+  if (err) return { error: err };
+  const ts = nowIso();
+  const fields = { name: String(f.name).trim().slice(0, 30), amount: Number.isInteger(f.amount) && f.amount > 0 ? f.amount : null, payee: String(f.payee || '').trim().slice(0, 60),
+    method_id: f.method_id || null, cat1_id: f.cat1_id || null, cat2_id: f.cat1_id ? f.cat2_id || null : null, memo: String(f.memo || '').trim().slice(0, 200) };
+  let t = id ? live(doc.templates).find(x => x.id === id) : null;
+  if (t) Object.assign(t, fields, { updated_at: ts });
+  else {
+    const order = Math.max(-1, ...live(doc.templates).map(x => x.order ?? 0)) + 1;
+    t = { id: uniqueId('TP-', doc.templates), ...fields, order, created_at: ts, updated_at: ts, deleted_at: null };
+    doc.templates.push(t);
+  }
+  return { item: t };
+}
+export function deleteSoft(item) { const ts = nowIso(); item.deleted_at = ts; item.updated_at = ts; }
 
 // ---------- 카드 실적 ----------
 // 그 달(YYYY-MM)의 지불방식별 실적 금액 (실적 제외 지출은 뺀다)
