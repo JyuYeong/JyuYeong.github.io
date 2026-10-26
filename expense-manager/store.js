@@ -345,12 +345,160 @@ export function saveTemplate(doc, f, id = null) {
 }
 export function deleteSoft(item) { const ts = nowIso(); item.deleted_at = ts; item.updated_at = ts; }
 
+// ---------- 통계 (M4) ----------
+// 기간: 'r6' 최근 6개월, 'r12' 최근 12개월, 'YYYY' 그 해 1~12월 (올해는 이번 달까지)
+export function monthsOf(period, today = todayKst()) {
+  const cur = today.slice(0, 7);
+  if (/^\d{4}$/.test(period)) {
+    const last = period === cur.slice(0, 4) ? Number(cur.slice(5)) : 12;
+    return Array.from({ length: last }, (_, i) => `${period}-${String(i + 1).padStart(2, '0')}`);
+  }
+  const n = period === 'r12' ? 12 : 6;
+  return Array.from({ length: n }, (_, i) => ymAdd(cur, i - n + 1));
+}
+export const yearsWithData = doc => [...new Set(live(doc.expenses).map(e => e.date.slice(0, 4)))].sort().reverse();
+// 월별 합계 표. dim: 'method' | 'cat'. 행: { id, name, archived, by: {ym: 금액}, total, children? }
+export function pivot(doc, months, dim) {
+  const set = new Set(months);
+  const ex = live(doc.expenses).filter(e => set.has(e.date.slice(0, 7)));
+  const add = (row, e) => { const ym = e.date.slice(0, 7); row.by[ym] = (row.by[ym] || 0) + e.amount; row.total += e.amount; row.count++; };
+  const mk = (id, name, archived = false) => ({ id, name, archived, by: {}, total: 0, count: 0 });
+  let rows;
+  if (dim === 'method') {
+    const map = new Map(methodsOf(doc, { archived: true }).map(m => [m.id, mk(m.id, m.name, m.archived)]));
+    for (const e of ex) { if (!map.has(e.method_id)) map.set(e.method_id, mk(e.method_id, '(삭제된 지불방식)')); add(map.get(e.method_id), e); }
+    rows = [...map.values()];
+  } else {
+    const map = new Map(cat1sOf(doc, { archived: true }).map(c => {
+      const r = mk(c.id, c.name, c.archived);
+      r.children = new Map(cat2sOf(doc, c.id, { archived: true }).map(c2 => [c2.id, mk(c2.id, c2.name, c2.archived)]));
+      return [c.id, r];
+    }));
+    for (const e of ex) {
+      if (!map.has(e.cat1_id)) map.set(e.cat1_id, Object.assign(mk(e.cat1_id, '(삭제된 카테고리)'), { children: new Map() }));
+      const r = map.get(e.cat1_id);
+      add(r, e);
+      const k = e.cat2_id || '';
+      if (!r.children.has(k)) r.children.set(k, mk(k || `${e.cat1_id}:none`, k ? '(삭제된 카테고리)' : '(하위 없음)'));
+      add(r.children.get(k), e);
+    }
+    rows = [...map.values()].map(r => ({ ...r, children: [...r.children.values()].filter(c => c.total || !c.archived) }));
+  }
+  // 보관했고 이 기간에 쓰지 않은 행은 뺀다
+  rows = rows.filter(r => r.total || !r.archived);
+  const totals = mk('total', '합계');
+  for (const e of ex) add(totals, e);
+  return { rows, totals, months };
+}
+
 // ---------- 카드 실적 ----------
 // 그 달(YYYY-MM)의 지불방식별 실적 금액 (실적 제외 지출은 뺀다)
 export function perfOf(doc, ym) {
   const sum = {};
   for (const e of live(doc.expenses)) if (e.date?.startsWith(ym) && !e.perf_excluded) sum[e.method_id] = (sum[e.method_id] || 0) + e.amount;
   return sum;
+}
+
+// 실적 현황: 목표가 있는 지불방식마다 { m, actual, target, pct, remain }
+export function perfStatus(doc, ym) {
+  const sum = perfOf(doc, ym);
+  return methodsOf(doc, { archived: true }).filter(m => m.perf_target > 0 && (!m.archived || sum[m.id]))
+    .map(m => { const actual = sum[m.id] || 0; return { m, actual, target: m.perf_target, pct: Math.min(999, Math.round(actual / m.perf_target * 100)), remain: Math.max(0, m.perf_target - actual) }; });
+}
+
+// ---------- 고정 지출 (M4) ----------
+// 매달 나가는 지출. 입력 여부는 그 달에 fixed_id가 같은 지출이 있는지로 판단한다. skips: 건너뛴 달 ['YYYY-MM']
+export const fixedOf = (doc, { all = true } = {}) => live(doc.fixed).filter(f => all || f.active !== false).sort((a, b) => (a.day - b.day) || (a.order ?? 0) - (b.order ?? 0) || cmpText(a.name, b.name));
+const daysIn = ym => new Date(Date.UTC(+ym.slice(0, 4), +ym.slice(5), 0)).getUTCDate();
+export const fixedDate = (f, ym) => `${ym}-${String(Math.min(f.day, daysIn(ym))).padStart(2, '0')}`;
+export function fixedError(doc, f, id = null) {
+  const name = String(f.name || '').trim();
+  if (!name) return '이름을 입력하세요';
+  if (!(Number.isInteger(f.day) && f.day >= 1 && f.day <= 31)) return '결제일(1~31)을 고르세요';
+  if (live(doc.fixed).some(x => x.id !== id && x.name.toLowerCase() === name.toLowerCase())) return '같은 이름의 고정 지출이 있습니다';
+  return null;
+}
+export function saveFixed(doc, f, id = null) {
+  const err = fixedError(doc, f, id);
+  if (err) return { error: err };
+  const ts = nowIso();
+  const fields = { name: String(f.name).trim().slice(0, 30), day: f.day, amount: Number.isInteger(f.amount) && f.amount > 0 ? f.amount : null, payee: String(f.payee || '').trim().slice(0, 60),
+    method_id: f.method_id || null, cat1_id: f.cat1_id || null, cat2_id: f.cat1_id ? f.cat2_id || null : null, memo: String(f.memo || '').trim().slice(0, 200), active: f.active !== false };
+  let x = id ? live(doc.fixed).find(y => y.id === id) : null;
+  if (x) Object.assign(x, fields, { updated_at: ts });
+  else { x = { id: uniqueId('F-', doc.fixed), ...fields, skips: [], order: 0, created_at: ts, updated_at: ts, deleted_at: null }; doc.fixed.push(x); }
+  return { item: x };
+}
+// 그 달의 고정 지출 현황: [{ f, date, entry(지출|null), skipped, state: 'done'|'skip'|'overdue'|'due'|'later' }]
+export function fixedStatus(doc, ym, today = todayKst()) {
+  const ex = live(doc.expenses).filter(e => e.fixed_id && e.date.startsWith(ym));
+  return fixedOf(doc, { all: false }).map(f => {
+    const date = fixedDate(f, ym);
+    const entry = ex.find(e => e.fixed_id === f.id) || null;
+    const skipped = (f.skips || []).includes(ym);
+    const state = entry ? 'done' : skipped ? 'skip' : date < today ? 'overdue' : date === today ? 'due' : 'later';
+    return { f, date, entry, skipped, state };
+  });
+}
+export function toggleSkip(f, ym) {
+  const s = new Set(f.skips || []);
+  if (s.has(ym)) s.delete(ym); else s.add(ym);
+  f.skips = [...s].sort(); f.updated_at = nowIso();
+}
+// 고정 지출을 지울 때 지출의 fixed_id는 남겨도 되지만, 내역에서 헷갈리지 않게 떼어 낸다
+export function deleteFixed(doc, f) {
+  const ts = nowIso();
+  f.deleted_at = ts; f.updated_at = ts;
+  let n = 0;
+  for (const e of doc.expenses) if (e.fixed_id === f.id) { e.fixed_id = null; e.updated_at = ts; n++; }
+  return n;
+}
+
+// ---------- 티커 (M4, Task Manager와 같은 방식) ----------
+export const TICKER_COLORS = { normal: '일반', caution: '주의', must: '필독' };
+export const TICKER_LEVELS = { normal: '보통', strong: '강조', urgent: '긴급' };
+export const tickerLevel = k => (TICKER_LEVELS[k?.level] ? k.level : 'normal');
+const TK_ID = 'S-ticker';
+const TK_DEFAULT = { id: TK_ID, color: 'normal', position: 'top', auto_fixed: true, auto_perf: true, perf_day: 20, updated_at: '', deleted_at: null };
+export function nowKst(now = new Date()) { const k = new Date(now.getTime() + 9 * 3600e3).toISOString(); return { date: k.slice(0, 10), time: k.slice(11, 16) }; }
+export function tickerSettings(doc) { return { ...TK_DEFAULT, ...live(doc.settings).find(x => x.id === TK_ID) }; }
+export function setTickerSettings(doc, patch) {
+  let s = (doc.settings || []).find(x => x.id === TK_ID);
+  if (!s) { s = { ...TK_DEFAULT, created_at: nowIso() }; doc.settings.push(s); }
+  Object.assign(s, patch, { updated_at: nowIso(), deleted_at: null });
+  return s;
+}
+export function createTicker(doc, text) {
+  text = String(text || '').trim().slice(0, 120);
+  if (!text) return null;
+  const ts = nowIso();
+  const k = { id: uniqueId('K-', doc.ticker), text, enabled: true, level: 'normal', expire_date: null, daily_from: null, daily_to: null, created_at: ts, updated_at: ts, deleted_at: null };
+  doc.ticker.push(k);
+  return k;
+}
+// 매일 시간대: from<to 이면 그 사이, from>to 이면 자정을 넘김, 같거나 비면 종일
+export function inDailyWindow(time, from, to) {
+  if (!from || !to || from === to) return true;
+  return from < to ? time >= from && time < to : time >= from || time < to;
+}
+// 'expired' | 'off' | 'outside' | 'on'
+export function tickerState(k, now = nowKst()) {
+  if (k.expire_date && now.date > k.expire_date) return 'expired';
+  if (!k.enabled) return 'off';
+  if (!inDailyWindow(now.time, k.daily_from, k.daily_to)) return 'outside';
+  return 'on';
+}
+// 자동 문구: 결제일이 지났는데 입력하지 않은 고정 지출, 실적 알림 시작일부터 목표에 못 미친 카드
+export function autoTicker(doc, now = nowKst()) {
+  const set = tickerSettings(doc), out = [];
+  const ym = now.date.slice(0, 7), mm = Number(ym.slice(5));
+  if (set.auto_fixed) for (const x of fixedStatus(doc, ym, now.date)) {
+    if (x.state === 'overdue' || x.state === 'due') out.push({ id: `auto-f-${x.f.id}`, auto: true, level: x.state === 'overdue' ? 'strong' : 'normal', text: `고정 지출 미입력: ${x.f.name}${x.f.amount ? ` ${fmtWon(x.f.amount)}원` : ''} (${Number(x.date.slice(8))}일${x.state === 'due' ? ', 오늘' : ''})` });
+  }
+  if (set.auto_perf && Number(now.date.slice(8)) >= (set.perf_day || 20)) for (const p of perfStatus(doc, ym)) {
+    if (p.remain > 0 && !p.m.archived) out.push({ id: `auto-p-${p.m.id}`, auto: true, level: 'strong', text: `${p.m.name} ${mm}월 실적 ${fmtWon(p.remain)}원 남음 (${p.pct}%)` });
+  }
+  return out;
 }
 
 // ---------- 설정 ----------

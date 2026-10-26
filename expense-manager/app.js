@@ -1,8 +1,8 @@
-// Expense Manager: PIN 잠금, 빠른 입력, 지불방식·카테고리 관리(M1) / 내역 표, 템플릿, 테마(M2) / Google Drive 동기화, PIN 재설정(M3)
+// Expense Manager: PIN 잠금, 빠른 입력, 지불방식·카테고리 관리(M1) / 내역 표, 템플릿, 테마(M2) / Google Drive 동기화, PIN 재설정(M3) / 통계, 카드 실적, 고정 지출, 티커(M4)
 import * as S from './store.js';
 import * as Sync from './sync.js';
 
-export const VERSION = 'M3';
+export const VERSION = 'M4';
 const MAX_FAILS = 5;
 const FAIL_WAIT_MS = 30 * 1000;
 
@@ -32,6 +32,11 @@ const P = {
   tag: '<path d="M3.5 12.5V4.5a1 1 0 011-1h8l8 8.5-8.5 8.5z"/><circle cx="8" cy="8" r="1.6"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>',
+  chart: '<path d="M4 20h16"/><path d="M7 16v-5M12 16V7M17 16v-8"/>',
+  repeat: '<path d="M17 3l3 3-3 3"/><path d="M4 11V9a3 3 0 013-3h13M7 21l-3-3 3-3"/><path d="M20 13v2a3 3 0 01-3 3H4"/>',
+  pause: '<path d="M9 6v12M15 6v12"/>',
+  bell: '<path d="M6 16V11a6 6 0 0112 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 004 0"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
 };
 const ic = (name, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[name]}</svg>`;
@@ -41,10 +46,11 @@ const LOGO = LOGO_SVG.replace('<svg ', '<svg class="glogo" ');
 // ---------- 상태 ----------
 let doc = null;
 let unlocked = false;
-const VIEWS = { input: { label: '입력', icon: 'edit' }, history: { label: '내역', icon: 'list' }, manage: { label: '관리', icon: 'gear' } };
+const VIEWS = { input: { label: '입력', icon: 'edit' }, history: { label: '내역', icon: 'list' }, stats: { label: '통계', icon: 'chart' }, fixed: { label: '고정', icon: 'repeat' }, manage: { label: '관리', icon: 'gear' } };
 // formIn: 입력 폼이 어디 있는지 ('page' 입력 화면 / 'dialog' 내역에서 연 수정 창). stash: 수정 창을 여는 동안 보관한 입력 화면 상태
 const ui = { view: 'input', draft: null, touched: new Set(), auto: new Set(), editId: null, ac: [], acIdx: -1, acOpen: false, err: null, formIn: 'page', stash: null, delArmed: false,
-  h: { ym: null, themeId: '', method: '', cat: '', text: '', sort: 'desc' } };
+  h: { ym: null, themeId: '', method: '', cat: '', text: '', sort: 'desc' },
+  st: { dim: 'method', period: 'r6', open: new Set(), series: null, perfYm: null }, fx: { ym: null } };
 const wideMq = matchMedia('(min-width:700px)');
 
 // ---------- 저장 ----------
@@ -82,7 +88,7 @@ async function applyMerged(m) {
   if (!unlocked) return;
   const a = document.activeElement, id = a?.id, sel = id && a.selectionStart != null ? [a.selectionStart, a.selectionEnd] : null;
   if (ui.view === 'input' && ui.formIn === 'page') readForm();
-  renderNav(); renderView();
+  renderNav(); renderView(); renderTicker();
   if (ui.formIn === 'dialog') { const host = $('#dlgForm'); if (host) { readForm(); renderForm(); } }
   if (id) { const el = document.getElementById(id); if (el && el !== document.activeElement) { el.focus(); if (sel) try { el.setSelectionRange(...sel); } catch { /* 무시 */ } } }
 }
@@ -311,7 +317,7 @@ async function lock() {
 // =====================================================================
 // 화면 틀
 // =====================================================================
-function renderAll() { renderNav(); renderView(); renderSaveLabel(); }
+function renderAll() { renderNav(); renderView(); renderSaveLabel(); renderTicker(); }
 function renderNav() {
   const items = Object.entries(VIEWS);
   $('#side').innerHTML = `<div class="brand">${LOGO_SVG}<span>Expense Manager</span></div>` +
@@ -322,9 +328,10 @@ function renderNav() {
 function renderView() {
   const v = $('#view');
   const top = v.scrollTop;
-  v.innerHTML = ui.view === 'input' ? inputHtml() : ui.view === 'history' ? historyHtml() : manageHtml();
+  v.innerHTML = { input: inputHtml, history: historyHtml, stats: statsHtml, fixed: fixedHtml, manage: manageHtml }[ui.view]();
   v.scrollTop = top;
   if (ui.view === 'input' && ui.formIn === 'page') bindInput();
+  if (ui.view === 'stats') drawChart();
 }
 // 입력 폼만 다시 그린다 (입력 화면 또는 수정 창)
 function renderForm() {
@@ -361,7 +368,7 @@ function autoTheme(d = ui.draft) {
 }
 function newDraft(keep = null) {
   const keepTheme = keep && ui.touched.has('theme');
-  ui.draft = { date: keep?.date || S.todayKst(), amountText: '', payee: '', method_id: keep?.method_id || null, cat1_id: null, cat2_id: null, memo: '', perf_excluded: false, theme_id: keepTheme ? keep.theme_id : null };
+  ui.draft = { date: keep?.date || S.todayKst(), amountText: '', payee: '', method_id: keep?.method_id || null, cat1_id: null, cat2_id: null, memo: '', perf_excluded: false, theme_id: keepTheme ? keep.theme_id : null, fixed_id: null, makeFixed: false };
   ui.touched = new Set(keepTheme ? ['theme'] : []);
   ui.auto = new Set();
   ui.editId = null;
@@ -450,10 +457,18 @@ function formHtml() {
     ${chipsTheme(d)}
     <div><label class="fl" for="fMemo">메모</label><input class="in" id="fMemo" value="${esc(d.memo)}" maxlength="200" placeholder="선택" enterkeyhint="done"></div>
     ${showPerf ? `<label class="ck"><input type="checkbox" id="fPerf" ${d.perf_excluded ? 'checked' : ''}> 카드 실적에서 제외</label>` : ''}
+    ${fixedLine(d, editing)}
     ${ui.err ? `<p class="note" id="formErr">${esc(ui.err.msg)}</p>` : ''}
     <div class="factions">${actions}</div>
     ${!editing ? `<div class="fsub"><button type="button" class="link" data-act="save-tpl">${ic('copy')}지금 내용으로 템플릿 만들기</button>${wideMq.matches ? '<span class="ftip">Ctrl+Enter 저장 · 지불처 추천은 ↑↓, Enter</span>' : ''}</div>` : ''}
   </form>`;
+}
+// 고정 지출 표시: 고정 지출에서 연 입력이면 연결 표시(해제 가능), 새 입력이면 "매달 고정 지출로 등록" 체크
+function fixedLine(d, editing) {
+  const f = d.fixed_id ? S.live(doc.fixed).find(x => x.id === d.fixed_id) : null;
+  if (f) return `<div class="fxlink">${ic('repeat')}<span>고정 지출 <b>${esc(f.name)}</b> (매달 ${f.day}일)${editing ? '' : ' 입력'}</span><button type="button" class="icbtn sm" data-act="fx-unlink" aria-label="고정 지출 연결 해제" title="연결 해제">${ic('x')}</button></div>`;
+  if (editing) return '';
+  return `<label class="ck"><input type="checkbox" id="fFixed" ${d.makeFixed ? 'checked' : ''}> 매달 고정 지출로 등록 (결제일은 이 날짜의 일, 템플릿도 함께 만듦)</label>`;
 }
 function inputHtml() {
   if (ui.editId && !S.live(doc.expenses).some(e => e.id === ui.editId)) newDraft();
@@ -481,6 +496,7 @@ function readForm() {
   d.payee = $('#fPayee').value;
   d.memo = $('#fMemo').value;
   if ($('#fPerf')) d.perf_excluded = $('#fPerf').checked;
+  if ($('#fFixed')) d.makeFixed = $('#fFixed').checked;
 }
 // 호출하는 쪽에서 readForm()으로 입력값을 먼저 반영한 뒤 부른다
 function rerenderInput(focusSel) {
@@ -595,7 +611,7 @@ function saveDraft(more) {
   const d = ui.draft;
   const f = { date: d.date, amount: S.parseWon(d.amountText), payee: d.payee, method_id: d.method_id, cat1_id: d.cat1_id, cat2_id: d.cat2_id, memo: d.memo, perf_excluded: hasTarget(d.method_id) ? d.perf_excluded : false, theme_id: themeById(d.theme_id) ? d.theme_id : null };
   const editing = ui.editId ? S.live(doc.expenses).find(e => e.id === ui.editId) : null;
-  if (editing) f.fixed_id = editing.fixed_id;
+  f.fixed_id = d.fixed_id && S.live(doc.fixed).some(x => x.id === d.fixed_id) ? d.fixed_id : null;
   const r = S.saveExpense(doc, f, ui.editId);
   if (r.error) {
     ui.err = { msg: r.error, field: r.field };
@@ -603,9 +619,21 @@ function saveDraft(more) {
     if (r.field === 'date') $('#fDate')?.focus();
     return;
   }
-  persist();
   const e = r.item;
-  const msg = `${editing ? '수정' : '저장'} · ${e.payee} ${won(e.amount)}`;
+  let msg = `${editing ? '수정' : '저장'} · ${e.payee} ${won(e.amount)}`;
+  // 입력하면서 "매달 고정 지출로 등록": 고정 지출과 같은 이름의 템플릿을 함께 만든다
+  if (!editing && d.makeFixed && !e.fixed_id) {
+    const base = { day: Number(e.date.slice(8)), amount: e.amount, payee: e.payee, method_id: e.method_id, cat1_id: e.cat1_id, cat2_id: e.cat2_id, memo: e.memo };
+    let name = e.payee.slice(0, 30), i = 2;
+    while (S.fixedError(doc, { ...base, name }) === '같은 이름의 고정 지출이 있습니다') name = `${e.payee.slice(0, 26)} ${i++}`;
+    const fr = S.saveFixed(doc, { ...base, name });
+    if (fr.item) {
+      e.fixed_id = fr.item.id; e.updated_at = S.nowIso();
+      if (!S.templatesOf(doc).some(t => t.name.toLowerCase() === name.toLowerCase())) S.saveTemplate(doc, { ...base, name });
+      msg += ` · 고정 지출(매달 ${base.day}일)·템플릿 등록`;
+    }
+  }
+  persist();
   if (ui.formIn === 'dialog') { endDialogEdit(); toast(msg); return; }
   if (more) newDraft({ date: d.date, method_id: d.method_id, theme_id: d.theme_id });
   else newDraft();
@@ -625,7 +653,7 @@ async function editExpense(id) {
 }
 function loadEditDraft(e) {
   ui.editId = e.id;
-  ui.draft = { date: e.date, amountText: S.fmtWon(e.amount), payee: e.payee, method_id: e.method_id, cat1_id: e.cat1_id, cat2_id: e.cat2_id, memo: e.memo || '', perf_excluded: !!e.perf_excluded, theme_id: e.theme_id || null };
+  ui.draft = { date: e.date, amountText: S.fmtWon(e.amount), payee: e.payee, method_id: e.method_id, cat1_id: e.cat1_id, cat2_id: e.cat2_id, memo: e.memo || '', perf_excluded: !!e.perf_excluded, theme_id: e.theme_id || null, fixed_id: e.fixed_id || null, makeFixed: false };
   ui.touched = new Set(['method', 'cat', 'theme']);
   ui.auto = new Set();
   ui.err = null;
@@ -875,6 +903,259 @@ function dlgTheme(t = null) {
 }
 
 // =====================================================================
+// 통계 (M4)
+// =====================================================================
+const manwon = n => { if (n >= 100000000) return `${+(n / 100000000).toFixed(1)}억`; if (n >= 100000) return `${Math.round(n / 10000).toLocaleString('ko-KR')}만`; if (n >= 10000) return `${+(n / 10000).toFixed(1)}만`; return n ? n.toLocaleString('ko-KR') : '0'; };
+const ymLabel = (ym, withYear) => (withYear ? `${ym.slice(2, 4)}.${Number(ym.slice(5))}월` : `${Number(ym.slice(5))}월`);
+function perfHtml() {
+  const st = ui.st;
+  if (!st.perfYm) st.perfYm = S.todayKst().slice(0, 7);
+  const list = S.perfStatus(doc, st.perfYm);
+  const cur = st.perfYm === S.todayKst().slice(0, 7);
+  const head = `<h2>${ic('wallet')}카드 실적<span class="sub mnav"><button class="icbtn sm" data-act="perf-month" data-v="-1" aria-label="이전 달">${ic('left')}</button><b class="num">${st.perfYm.slice(0, 4)}.${st.perfYm.slice(5)}</b><button class="icbtn sm" data-act="perf-month" data-v="1" aria-label="다음 달" ${cur ? 'disabled' : ''}>${ic('right')}</button></span></h2>`;
+  if (!list.length) return `<section class="card">${head}<p class="hint" style="margin:0">관리 › 지불방식에서 월 실적 목표를 넣으면 여기서 달성률을 보여 줍니다.</p></section>`;
+  const rows = list.map(p => {
+    const done = p.remain === 0;
+    return `<div class="pf-row"><div class="pf-top"><b>${esc(p.m.name)}</b><span class="num">${esc(won(p.actual))} <span class="muted">/ ${esc(won(p.target))}</span></span></div>
+      <div class="meter${done ? ' done' : ''}" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.min(100, p.pct)}" aria-label="${esc(p.m.name)} 실적 ${p.pct}%"><i style="width:${Math.min(100, p.pct)}%"></i></div>
+      <div class="pf-bot"><span class="num">${p.pct}%</span><span class="${done ? 'ok' : ''}">${done ? `${ic('check')}달성` : `${esc(won(p.remain))} 남음`}</span></div></div>`;
+  }).join('');
+  return `<section class="card">${head}${rows}<p class="hint">실적 금액에서 “실적 제외”로 표시한 지출은 뺍니다. 기간은 매달 1일~말일입니다.</p></section>`;
+}
+function statsHtml() {
+  const st = ui.st;
+  const months = S.monthsOf(st.period);
+  const pv = S.pivot(doc, months, st.dim);
+  const years = S.yearsWithData(doc);
+  const thisYear = S.todayKst().slice(0, 4);
+  const opts = [['r6', '최근 6개월'], ['r12', '최근 12개월'], ...[...new Set([thisYear, ...years])].sort().reverse().map(y => [y, `${y}년`])];
+  const multiYear = new Set(months.map(m => m.slice(0, 4))).size > 1;
+  const series = st.series ? findRow(pv, st.series) : null;
+  if (st.series && !series) st.series = null;
+  const cell = (row, ym, cls = '') => { const v = row.by[ym] || 0; return `<td class="num ${cls}${v ? '' : ' zero'}">${v ? `<button class="cellb" data-act="st-cell" data-row="${esc(row.id)}" data-ym="${ym}" title="내역 보기">${esc(S.fmtWon(v))}</button>` : '–'}</td>`; };
+  const tr = (row, lvl = 1, hasKids = false) => {
+    const open = st.open.has(row.id);
+    const avg = Math.round(row.total / months.length);
+    return `<tr class="lv${lvl}${st.series === row.id ? ' sel' : ''}${row.archived ? ' arch' : ''}">
+      <th scope="row">${lvl === 1 && hasKids ? `<button class="tgl" data-act="st-open" data-id="${esc(row.id)}" aria-expanded="${open}" aria-label="${esc(row.name)} 하위 ${open ? '접기' : '펼치기'}">${ic(open ? 'down' : 'right')}</button>` : '<span class="tgl-sp"></span>'}<button class="rowb" data-act="st-series" data-id="${esc(row.id)}" title="차트에 표시">${esc(row.name)}</button></th>
+      ${months.map(m => cell(row, m)).join('')}<td class="num tot">${esc(S.fmtWon(row.total))}</td><td class="num avg">${esc(S.fmtWon(avg))}</td></tr>`;
+  };
+  const body = pv.rows.map(r => tr(r, 1, !!r.children?.length) + (r.children && st.open.has(r.id) ? r.children.map(c => tr(c, 2)).join('') : '')).join('');
+  const table = pv.rows.length ? `<div class="stwrap"><table class="stbl"><thead><tr><th scope="col">${st.dim === 'method' ? '지불방식' : '카테고리'}</th>${months.map(m => `<th scope="col" class="num">${ymLabel(m, multiYear)}</th>`).join('')}<th scope="col" class="num">합계</th><th scope="col" class="num">월평균</th></tr></thead>
+    <tbody>${body}</tbody><tfoot><tr class="total${st.series ? '' : ' sel'}"><th scope="row"><span class="tgl-sp"></span><button class="rowb" data-act="st-series" data-id="" title="차트에 표시">합계</button></th>${months.map(m => cell(pv.totals, m)).join('')}<td class="num tot">${esc(S.fmtWon(pv.totals.total))}</td><td class="num avg">${esc(S.fmtWon(Math.round(pv.totals.total / months.length)))}</td></tr></tfoot></table></div>`
+    : '<p class="hint">이 기간에 지출이 없습니다.</p>';
+  return `<div class="stwrap-all">${perfHtml()}
+    <section class="card"><div class="stctl"><span class="seg" role="group" aria-label="기준">${[['method', '지불방식'], ['cat', '카테고리']].map(([v, l]) => `<button data-act="st-dim" data-v="${v}" aria-pressed="${st.dim === v}">${l}</button>`).join('')}</span>
+      <select class="in sm" id="stPeriod" aria-label="기간">${opts.map(([v, l]) => `<option value="${v}"${v === st.period ? ' selected' : ''}>${l}</option>`).join('')}</select></div>
+      <h2 class="chh">월별 추이 · ${esc(series ? series.name : '전체')}${series ? '<button class="btn sm" data-act="st-series" data-id="">전체 보기</button>' : ''}</h2>
+      <div class="chart" id="chart" data-months="${months.join(',')}"></div>
+      <p class="hint">표에서 항목 이름을 누르면 그 항목의 추이를, 금액을 누르면 그 달 내역을 봅니다.${st.dim === 'cat' ? ' 1단계 왼쪽 화살표로 2단계를 펼칩니다.' : ''}</p></section>
+    <section class="card">${table}</section></div>`;
+}
+function findRow(pv, id) {
+  for (const r of pv.rows) { if (r.id === id) return r; for (const c of r.children || []) if (c.id === id) return c; }
+  return null;
+}
+// 막대 차트 (SVG): 단일 계열이라 범례 없이 제목이 계열을 말한다. 최댓값과 마지막 달만 값 표시, 나머지는 툴팁
+function drawChart() {
+  const host = $('#chart');
+  if (!host) return;
+  const months = host.dataset.months.split(',');
+  const pv = S.pivot(doc, months, ui.st.dim);
+  const row = (ui.st.series && findRow(pv, ui.st.series)) || pv.totals;
+  const vals = months.map(m => row.by[m] || 0);
+  const W = Math.max(280, host.clientWidth), H = 220, L = 46, R = 8, T = 22, B = 26;
+  const max = Math.max(...vals, 0);
+  const steps = [1, 2, 2.5, 5, 10];
+  let step = 10000;
+  if (max > 0) { const raw = max / 4, p = 10 ** Math.floor(Math.log10(raw)); step = p * steps.find(s => s * p >= raw); }
+  const top = Math.max(step, Math.ceil(max / step) * step);
+  const y = v => T + (H - T - B) * (1 - v / top);
+  const band = (W - L - R) / months.length, bw = Math.min(24, band * 0.56);
+  const multiYear = new Set(months.map(m => m.slice(0, 4))).size > 1;
+  const maxI = vals.indexOf(max), lastI = vals.length - 1;
+  let g = '';
+  for (let v = 0; v <= top + 1; v += step) g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="grid${v ? '' : ' base'}"/><text x="${L - 6}" y="${y(v) + 4}" class="tick" text-anchor="end">${manwon(v)}</text>`;
+  const bars = vals.map((v, i) => {
+    const cx = L + band * i + band / 2, x = cx - bw / 2, h = Math.max(0, y(0) - y(v)), r = Math.min(4, h);
+    const path = h > 0 ? `M${x},${y(0)} V${y(v) + r} Q${x},${y(v)} ${x + r},${y(v)} H${x + bw - r} Q${x + bw},${y(v)} ${x + bw},${y(v) + r} V${y(0)} Z` : '';
+    const lab = v && (i === maxI || i === lastI) ? `<text x="${cx}" y="${y(v) - 6}" class="vlab" text-anchor="middle">${manwon(v)}</text>` : '';
+    return `<g class="bar" data-i="${i}" tabindex="0" role="img" aria-label="${ymLabel(months[i], true)} ${S.fmtWon(v)}원"><rect class="hit" x="${L + band * i}" y="${T}" width="${band}" height="${H - T - B}"/>${path ? `<path d="${path}" class="mark"/>` : ''}${lab}<text x="${cx}" y="${H - 8}" class="tick" text-anchor="middle">${ymLabel(months[i], multiYear && (i === 0 || months[i].endsWith('-01')))}</text></g>`;
+  }).join('');
+  host.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="group" aria-label="월별 지출 막대 차트">${g}${bars}</svg><div class="tip" id="chartTip" hidden></div>`;
+  const tip = $('#chartTip');
+  const show = el => {
+    const i = +el.dataset.i, v = vals[i];
+    host.querySelectorAll('.bar').forEach(b => b.classList.toggle('on', b === el));
+    tip.innerHTML = `<b>${months[i].slice(0, 4)}년 ${Number(months[i].slice(5))}월</b><span class="num">${esc(won(v))}</span><small>${row.count ? `${S.filterExpenses(doc, { ym: months[i], ...(row === pv.totals ? {} : ui.st.dim === 'method' ? { method: row.id } : { cat: row.id.includes(':none') ? row.id.split(':')[0] : row.id }) }).length}건` : ''}</small>`;
+    tip.hidden = false;
+    const cx = L + band * i + band / 2;
+    tip.style.left = `${Math.min(W - tip.offsetWidth / 2 - 4, Math.max(tip.offsetWidth / 2 + 4, cx))}px`;
+    tip.style.top = `${Math.max(0, y(v) - 8)}px`;
+  };
+  host.querySelectorAll('.bar').forEach(b => { b.addEventListener('pointerenter', () => show(b)); b.addEventListener('focus', () => show(b)); b.addEventListener('click', () => show(b)); });
+  host.addEventListener('pointerleave', () => { tip.hidden = true; host.querySelectorAll('.bar.on').forEach(b => b.classList.remove('on')); });
+}
+let chartTimer;
+addEventListener('resize', () => { clearTimeout(chartTimer); chartTimer = setTimeout(() => { if (unlocked && ui.view === 'stats') drawChart(); }, 150); });
+// 표의 금액을 누르면 그 달·그 항목의 내역으로
+function statCellToHistory(rowId, ym) {
+  const h = ui.h;
+  Object.assign(h, { ym, themeId: '', method: '', cat: '', text: '' });
+  if (rowId && rowId !== 'total') {
+    if (ui.st.dim === 'method') h.method = rowId;
+    else h.cat = rowId.includes(':none') ? rowId.split(':')[0] : rowId;
+  }
+  ui.view = 'history';
+  $('#view').scrollTop = 0;
+  renderAll();
+}
+
+// =====================================================================
+// 고정 지출 (M4)
+// =====================================================================
+const FX_STATE = { done: ['입력됨', 'ok'], skip: ['건너뜀', ''], overdue: ['미입력 · 지남', 'warn'], due: ['오늘 결제', 'warn'], later: ['예정', ''] };
+function fixedHtml() {
+  const fx = ui.fx;
+  if (!fx.ym) fx.ym = S.todayKst().slice(0, 7);
+  const cur = S.todayKst().slice(0, 7);
+  const list = S.fixedStatus(doc, fx.ym);
+  const planned = list.filter(x => !x.skipped).reduce((s, x) => s + (x.entry ? x.entry.amount : x.f.amount || 0), 0);
+  const doneN = list.filter(x => x.entry).length, left = list.filter(x => x.state === 'overdue' || x.state === 'due' || x.state === 'later').length;
+  const rows = list.map(x => {
+    const [lbl, cls] = FX_STATE[x.state];
+    const m = methodById(x.f.method_id), c = [catById(x.f.cat1_id)?.name, catById(x.f.cat2_id)?.name].filter(Boolean).join('›');
+    const amt = x.entry ? x.entry.amount : x.f.amount;
+    const act = x.entry
+      ? `<button class="btn sm" data-act="h-edit" data-id="${x.entry.id}">보기</button>`
+      : x.skipped ? `<button class="btn sm" data-act="fx-skip" data-id="${x.f.id}">되돌리기</button>`
+      : `<button class="btn sm" data-act="fx-skip" data-id="${x.f.id}" title="이번 달은 나가지 않음">건너뛰기</button><button class="btn sm primary" data-act="fx-enter" data-id="${x.f.id}">입력</button>`;
+    return `<div class="fxrow ${x.state}"><span class="fxd num">${Number(x.date.slice(8))}일</span>
+      <div class="fxm"><b>${esc(x.f.name)}</b><span>${esc([x.f.payee, m?.name, c].filter(Boolean).join(' · ') || '내용 없음')}${x.entry ? ` · ${esc(S.fmtDateShort(x.entry.date))} 입력` : ''}</span></div>
+      <span class="fxa num">${amt ? esc(S.fmtWon(amt)) : '–'}</span><span class="fxs ${cls}">${lbl}</span><span class="fxb">${act}</span></div>`;
+  }).join('');
+  const all = S.fixedOf(doc);
+  const defs = all.map(f => `<div class="mrow${f.active === false ? ' arch' : ''}"><div class="nm tinfo"><b>${esc(f.name)} <span class="muted">· 매달 ${f.day}일</span></b><span>${esc(tplSummary(f))}</span></div>
+      <button type="button" class="sw" role="switch" data-act="fx-active" data-id="${f.id}" aria-checked="${f.active !== false}" aria-label="${esc(f.name)} 사용" title="사용 / 쉬기"><i></i></button>
+      <button class="icbtn" data-act="fx-edit" data-id="${f.id}" aria-label="${esc(f.name)} 편집">${ic('pen')}</button>${rmBtn('fixed', f)}</div>`).join('');
+  return `<div class="mgwrap">
+    <section class="card"><div class="hbar"><button class="icbtn" data-act="fx-month" data-v="-1" aria-label="이전 달">${ic('left')}</button><b class="ym num">${fx.ym.slice(0, 4)}년 ${Number(fx.ym.slice(5))}월</b><button class="icbtn" data-act="fx-month" data-v="1" aria-label="다음 달">${ic('right')}</button>${fx.ym !== cur ? '<button class="btn sm" data-act="fx-this">이번 달</button>' : ''}<span class="sp"></span></div>
+      ${list.length ? `<div class="hsum" style="padding:0 0 8px"><span><b class="num">${esc(won(planned))}</b> · ${list.length}건 중 ${doneN}건 입력${left ? ` · <span class="warn-t">${left}건 남음</span>` : ''}</span></div><div class="fxlist">${rows}</div>`
+        : `<p class="hint" style="margin:0">${all.length ? '이 달에 사용 중인 고정 지출이 없습니다.' : '아래에서 고정 지출을 등록하거나, 빠른 입력에서 “매달 고정 지출로 등록”을 체크하고 저장하세요.'}</p>`}</section>
+    <section class="card"><h2>${ic('repeat')}고정 지출 목록<span class="sub">결제일 순</span></h2>${defs || '<p class="hint" style="margin:0 0 4px">아직 없습니다.</p>'}
+      <div class="addrow"><button class="btn" data-act="fx-new">${ic('plus')}새 고정 지출</button></div>
+      <p class="hint">결제일이 그 달에 없으면(예: 31일) 말일로 봅니다. 결제일이 지나도 입력하지 않으면 티커에 알립니다. 쉬게 한 항목은 목록과 알림에서 빠집니다.</p></section></div>`;
+}
+// 고정 지출로 입력: 입력 화면에 그 내용을 채운다 (날짜는 그 달의 결제일)
+async function enterFixed(f) {
+  if (ui.view === 'input' && ui.formIn === 'page') readForm();
+  if (draftDirty() && !(await confirmDialog('입력 중인 내용', '입력 화면에 쓰던 내용을 버리고 이 고정 지출을 입력할까요?', '입력하기'))) return;
+  newDraft();
+  const d = ui.draft;
+  Object.assign(d, { date: S.fixedDate(f, ui.fx.ym || S.todayKst().slice(0, 7)), amountText: f.amount ? S.fmtWon(f.amount) : '', payee: f.payee || f.name, memo: f.memo || '', fixed_id: f.id });
+  const m = methodById(f.method_id); if (usable(m)) d.method_id = m.id;
+  const c1 = catById(f.cat1_id), c2 = catById(f.cat2_id);
+  if (usable(c1) && (!f.cat2_id || usable(c2))) { d.cat1_id = c1.id; d.cat2_id = f.cat2_id || null; }
+  ui.touched = new Set(['method', 'cat']);
+  autoTheme();
+  ui.view = 'input';
+  $('#view').scrollTop = 0;
+  renderAll();
+  toast(`고정 지출 “${f.name}” 내용을 채웠습니다. 금액을 확인하고 저장하세요`);
+  if (wideMq.matches || !d.amountText) $('#fAmt')?.focus();
+}
+function dlgFixed(f = null) {
+  const v = f || { name: '', day: Number(S.todayKst().slice(8)), amount: null, payee: '', method_id: null, cat1_id: null, cat2_id: null, memo: '' };
+  const opt = (val, label, cur) => `<option value="${esc(val)}"${String(val) === String(cur ?? '') ? ' selected' : ''}>${esc(label)}</option>`;
+  const c2opts = c1 => opt('', '(하위 없음/선택 안 함)', v.cat2_id) + (c1 ? S.cat2sOf(doc, c1, { archived: true }).map(c => opt(c.id, c.name, v.cat2_id)).join('') : '');
+  openDialog(f ? '고정 지출 편집' : '새 고정 지출', `<form id="fxf" autocomplete="off" class="dform">
+    <div class="two"><div><label class="fl" for="xN">이름 *</label><input class="in" id="xN" maxlength="30" value="${esc(v.name)}" placeholder="예: 통신비"></div>
+      <div><label class="fl" for="xD">매달 결제일 *</label><select class="in" id="xD">${Array.from({ length: 31 }, (_, i) => opt(i + 1, `${i + 1}일`, v.day)).join('')}</select></div></div>
+    <div class="two"><div><label class="fl" for="xA">금액 (달마다 다르면 비움)</label><input class="in" id="xA" inputmode="numeric" maxlength="14" value="${v.amount ? esc(S.fmtWon(v.amount)) : ''}" placeholder="0"></div>
+      <div><label class="fl" for="xP">지불처</label><input class="in" id="xP" maxlength="60" value="${esc(v.payee)}" placeholder="예: SKT"></div></div>
+    <div><label class="fl" for="xM">지불방식</label><select class="in" id="xM">${opt('', '(선택 안 함)', v.method_id)}${S.methodsOf(doc, { archived: true }).map(m => opt(m.id, m.name + (m.archived ? ' (보관)' : ''), v.method_id)).join('')}</select></div>
+    <div class="two"><div><label class="fl" for="xC1">카테고리</label><select class="in" id="xC1">${opt('', '(선택 안 함)', v.cat1_id)}${S.cat1sOf(doc, { archived: true }).map(c => opt(c.id, c.name, v.cat1_id)).join('')}</select></div>
+      <div><label class="fl" for="xC2">하위</label><select class="in" id="xC2">${c2opts(v.cat1_id)}</select></div></div>
+    <div><label class="fl" for="xMemo">메모</label><input class="in" id="xMemo" maxlength="200" value="${esc(v.memo)}"></div>
+    <p class="note" id="xErr" hidden></p></form>`,
+    `<button class="btn" data-dlg="close">취소</button><button class="btn primary" id="xOk">${f ? '저장' : '만들기'}</button>`);
+  const amt = $('#xA');
+  amt.addEventListener('input', () => { const r = S.formatAmountInput(amt.value, amt.selectionStart ?? amt.value.length); amt.value = r.text; try { amt.setSelectionRange(r.caret, r.caret); } catch { /* 무시 */ } });
+  $('#xC1').addEventListener('change', () => { v.cat2_id = null; $('#xC2').innerHTML = c2opts($('#xC1').value); });
+  const go = () => {
+    const r = S.saveFixed(doc, { name: $('#xN').value, day: Number($('#xD').value), amount: S.parseWon(amt.value), payee: $('#xP').value, method_id: $('#xM').value || null, cat1_id: $('#xC1').value || null, cat2_id: $('#xC2').value || null, memo: $('#xMemo').value, active: f ? f.active !== false : true }, f?.id || null);
+    if (r.error) { const e = $('#xErr'); e.textContent = r.error; e.hidden = false; return; }
+    persist(); closeDialog(); renderAll();
+    toast(`고정 지출 “${r.item.name}” ${f ? '저장' : '등록'} (매달 ${r.item.day}일)`);
+  };
+  $('#xOk').addEventListener('click', go);
+  $('#fxf').addEventListener('submit', e => { e.preventDefault(); go(); });
+  $('#xN').focus();
+}
+
+// =====================================================================
+// 티커 (M4)
+// =====================================================================
+const TK_SPEED = 55; // px/초
+let tkKey = '';
+function renderTicker(force = false) {
+  const el = $('#ticker');
+  if (!el || !doc) return;
+  const set = S.tickerSettings(doc);
+  const now = S.nowKst();
+  const own = S.live(doc.ticker).filter(k => S.tickerState(k, now) === 'on').sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+  const items = [...S.autoTicker(doc, now), ...own];
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const key = JSON.stringify([set.color, set.position, items.map(k => [k.id, k.text, S.tickerLevel(k)]), innerWidth, reduce]);
+  if (!force && key === tkKey) return;
+  tkKey = key;
+  const anchor = set.position === 'top' ? $('#view') : $('#tabs');
+  if (el.nextElementSibling !== anchor) anchor.before(el);
+  el.className = `ticker c-${set.color} pos-${set.position}${el.classList.contains('paused') ? ' paused' : ''}`;
+  if (!items.length) { el.hidden = true; el.innerHTML = ''; return; }
+  el.hidden = false;
+  const itemHtml = k => { const lv = S.tickerLevel(k); return `<span class="tk-item lv-${lv}${k.auto ? ' auto' : ''}">${k.auto ? ic('bell') : ''}${lv === 'urgent' ? `<span class="tk-badge"><b class="tk-bang">!</b>${esc(k.text)}</span>` : esc(k.text)}</span>`; };
+  const unit = `<span class="tk-unit" style="display:inline-flex">${items.map(k => `${itemHtml(k)}<span class="tk-sep">•</span>`).join('')}</span>`;
+  el.title = '누르면 일시정지 / 다시 재생';
+  el.innerHTML = `<div class="tk-track" aria-hidden="true">${unit}</div><span class="sr">알림: ${items.map(k => esc(k.text)).join(' / ')}</span><span class="tk-pause" aria-hidden="true">${ic('pause')}일시정지</span>`;
+  if (reduce) return;
+  const track = el.firstElementChild;
+  const w = track.firstElementChild.getBoundingClientRect().width || 1;
+  const reps = Math.max(1, Math.ceil(el.clientWidth / w));
+  const half = unit.repeat(reps);
+  track.innerHTML = half + half;
+  track.style.setProperty('--tk-dur', ((w * reps) / TK_SPEED).toFixed(1) + 's');
+}
+$('#ticker').addEventListener('click', e => { e.currentTarget.classList.toggle('paused'); });
+setInterval(() => { if (unlocked) renderTicker(); }, 30000);
+const TK_STATE = { on: ['표시 중', 'on'], off: ['꺼짐', ''], outside: ['시간대 외', ''], expired: ['만료', 'exp'] };
+const segHtml = (act, opts, cur) => `<span class="seg" role="group">${opts.map(([v, l]) => `<button type="button" data-act="${act}" data-v="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</span>`;
+function tickerCardHtml() {
+  const set = S.tickerSettings(doc);
+  const now = S.nowKst();
+  const list = S.live(doc.ticker).sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+  const sw = c => `<span class="swatch" style="background:var(--tk-${c}-bg)"></span>`;
+  const rows = list.map(k => {
+    const [lbl, cls] = TK_STATE[S.tickerState(k, now)];
+    const fld = (f, type, label, extra = '') => `<input class="in" type="${type}" data-kid="${k.id}" data-kf="${f}" value="${esc(k[f] || '')}" aria-label="${label}"${extra}>`;
+    return `<div class="tkrow${k.enabled ? '' : ' off'}" data-row="${k.id}">
+      <div class="r1"><button type="button" class="sw" role="switch" data-act="tk-toggle" data-id="${k.id}" aria-checked="${k.enabled}" aria-label="띠에 표시"><i></i></button>${fld('text', 'text', '문장', ' maxlength="120"')}${rmBtn('ticker', k)}</div>
+      <div class="r2"><span class="tw">강조${segHtml('tk-level" data-id="' + k.id, Object.entries(S.TICKER_LEVELS), S.tickerLevel(k))}</span><span class="tw">종료일${fld('expire_date', 'date', '표시 종료일')}</span><span class="tw">매일${fld('daily_from', 'time', '표시 시작 시각')}~${fld('daily_to', 'time', '표시 종료 시각')}</span><span class="tkst ${cls}">${lbl}</span></div></div>`;
+  }).join('');
+  return `<section class="card" id="tkCard"><h2>${ic('bell')}티커<span class="sub">화면 위·아래에 흐르는 한 줄 알림</span></h2>
+    <div class="tkset2"><div><span class="fl">띠 색상</span>${segHtml('tk-color', Object.entries(S.TICKER_COLORS).map(([v, l]) => [v, sw(v) + l]), set.color)}</div>
+      <div><span class="fl">띠 위치</span>${segHtml('tk-pos', [['top', '위'], ['bottom', '아래']], set.position)}</div></div>
+    <span class="fl" style="margin-top:12px">자동 알림</span>
+    <div class="autorow"><button type="button" class="sw" role="switch" data-act="tk-auto" data-v="auto_fixed" aria-checked="${!!set.auto_fixed}"><i></i>고정 지출 결제일이 지났는데 입력하지 않으면 알림</button></div>
+    <div class="autorow"><button type="button" class="sw" role="switch" data-act="tk-auto" data-v="auto_perf" aria-checked="${!!set.auto_perf}"><i></i>카드 실적이 목표에 못 미치면 알림</button>
+      <label class="tw">매달 <select class="in sm" id="tkPerfDay" aria-label="실적 알림 시작일">${Array.from({ length: 28 }, (_, i) => `<option value="${i + 1}"${set.perf_day === i + 1 ? ' selected' : ''}>${i + 1}일</option>`).join('')}</select>부터</label></div>
+    <span class="fl" style="margin-top:12px">내 문장</span>
+    <div class="tkset">${rows || '<p class="hint" style="margin:0">아직 문장이 없습니다.</p>'}</div>
+    <form class="addrow" data-add="ticker"><input class="in" name="n" maxlength="120" placeholder="새 문장 (예: 이번 달 외식 줄이기)" aria-label="새 티커 문장"><button class="btn primary" type="submit">추가</button></form>
+    <p class="hint">켜 둔 문장만 흐릅니다. 강조는 보통·강조(굵게)·긴급(굵게 + 테두리 + !) 중에서 고릅니다. 종료일이 지나면 띠에서 사라집니다. 매일 시간대는 시작과 끝을 모두 넣어야 적용되고, 시작이 끝보다 늦으면 자정을 넘깁니다. 띠를 누르면 일시정지합니다. 자동 알림은 종 아이콘과 함께 맨 앞에 흐릅니다.</p></section>`;
+}
+
+// =====================================================================
 // 관리
 // =====================================================================
 const armed = new Set();
@@ -920,6 +1201,7 @@ function manageHtml() {
       ${themes.length ? themes.map(t => { const l = S.filterExpenses(doc, { themeId: t.id }); return `<div class="mrow"><div class="nm tinfo"><b>${esc(t.name)}</b><span>${esc(periodTxt(t))} · ${l.length}건 · ${esc(won(S.sumOf(l)))}${t.memo ? ' · ' + esc(t.memo) : ''}</span></div>
         <button class="btn sm" data-act="theme-view" data-id="${t.id}">보기</button><button class="icbtn" data-act="theme-edit" data-id="${t.id}" aria-label="${esc(t.name)} 편집">${ic('pen')}</button>${rmBtn('theme', t)}</div>`; }).join('') : '<p class="hint" style="margin:0 0 4px">예: “포천 여행”을 10.31~11.01로 만들면 그 기간 지출을 입력할 때 자동으로 골라집니다</p>'}
       <div class="addrow"><button class="btn" data-act="theme-new">${ic('plus')}새 테마</button></div></section>
+    ${tickerCardHtml()}
     <section class="card"><h2>${ic('gear')}설정</h2>
       <div class="kv"><span>Google Drive 동기화</span><span id="syncState">${syncStateHtml()}</span></div>
       <div class="setrow">${Sync.signedIn() ? '<button class="btn" data-act="sync-now">지금 동기화</button><button class="btn" data-act="sign-out">Google 로그아웃 (동기화 중지)</button>' : '<button class="btn primary" data-act="sign-in">Google 로그인 · Drive 동기화 켜기</button>'}</div>
@@ -928,7 +1210,7 @@ function manageHtml() {
       <p class="ver">Expense Manager ${VERSION} · 지출 ${S.live(doc.expenses).length}건</p></section>
   </div>`;
 }
-function itemOf(kind, id) { return { method: methodById, category: catById, template: tplById, theme: themeById }[kind](id); }
+function itemOf(kind, id) { return { method: methodById, category: catById, template: tplById, theme: themeById, fixed: x => S.live(doc.fixed).find(f => f.id === x) || null, ticker: x => S.live(doc.ticker).find(k => k.id === x) || null }[kind](id); }
 function listOf(kind, item) {
   if (kind === 'method') return S.methodsOf(doc, { archived: true });
   if (kind === 'template') return S.templatesOf(doc);
@@ -947,6 +1229,7 @@ function bindManageEvents() {
     const name = f.n.value.trim();
     if (!name) { f.n.focus(); return; }
     const kind = f.dataset.add;
+    if (kind === 'ticker') { if (S.createTicker(doc, name)) { persist(); refreshManage('form[data-add="ticker"] input'); renderTicker(); } return; }
     const r = kind === 'method' ? S.addMethod(doc, name) : S.addCategory(doc, name, kind === 'cat2' ? f.dataset.parent : null);
     if (r.error) { toast(r.error); f.n.focus(); return; }
     persist();
@@ -962,6 +1245,16 @@ function bindManageEvents() {
   v.addEventListener('change', e => {
     const t = e.target;
     if (t.dataset?.h) { ui.h[t.dataset.h] = t.value; refreshHistory(t.dataset.h === 'themeId'); return; }
+    if (t.id === 'stPeriod') { ui.st.period = t.value; renderView(); return; }
+    if (t.id === 'tkPerfDay') { S.setTickerSettings(doc, { perf_day: Number(t.value) }); persist(); renderTicker(); return; }
+    if (t.dataset?.kid) {
+      const k = itemOf('ticker', t.dataset.kid); if (!k) return;
+      const f = t.dataset.kf, v = t.value.trim();
+      if (f === 'text') { if (!v) { t.value = k.text; return; } k.text = v.slice(0, 120); } else k[f] = v || null;
+      k.updated_at = S.nowIso(); persist(); renderTicker();
+      const st = t.closest('.tkrow')?.querySelector('.tkst'); if (st) { const [lbl, cls] = TK_STATE[S.tickerState(k)]; st.textContent = lbl; st.className = `tkst ${cls}`; }
+      return;
+    }
     if (!t.dataset?.edit) return;
     if (t.dataset.edit === 'target') {
       const m = methodById(t.dataset.id);
@@ -1084,11 +1377,13 @@ document.addEventListener('click', async e => {
     case 'rm': {
       const kind = b.dataset.kind, item = itemOf(kind, id), k = `${kind}:${id}`;
       if (!item) return;
-      const soft = kind === 'template' || kind === 'theme';
+      const soft = kind === 'template' || kind === 'theme' || kind === 'fixed' || kind === 'ticker';
       if (!soft && S.usageCount(doc, kind, id)) { toast('지출에서 쓰고 있어 지울 수 없습니다. 대신 보관하세요'); return; }
-      if (!armed.has(k)) { armed.add(k); refreshManage(); setTimeout(() => { if (armed.delete(k) && ui.view === 'manage') refreshManage(); }, 3000); return; }
+      if (!armed.has(k)) { armed.add(k); refreshManage(); setTimeout(() => { if (armed.delete(k) && (ui.view === 'manage' || ui.view === 'fixed')) refreshManage(); }, 3000); return; }
       armed.delete(k);
       if (kind === 'template') { S.deleteSoft(item); persist(); refreshManage(); toast(`템플릿 “${item.name}” 삭제`); return; }
+      if (kind === 'ticker') { S.deleteSoft(item); persist(); refreshManage(); renderTicker(); toast('티커 문장을 지웠습니다'); return; }
+      if (kind === 'fixed') { const n = S.deleteFixed(doc, item); if (d.fixed_id === id) d.fixed_id = null; persist(); renderAll(); toast(`고정 지출 “${item.name}” 삭제${n ? ` (지출 ${n}건과 연결 해제)` : ''}`); return; }
       if (kind === 'theme') {
         const n = S.deleteTheme(doc, item);
         if (d.theme_id === id) d.theme_id = null;
@@ -1115,6 +1410,27 @@ document.addEventListener('click', async e => {
     case 'theme-new': dlgTheme(); return;
     case 'theme-edit': { const t = themeById(id); if (t) dlgTheme(t); return; }
     case 'theme-view': openThemeInHistory(id); return;
+    // 통계
+    case 'st-dim': ui.st.dim = b.dataset.v; ui.st.series = null; ui.st.open.clear(); renderView(); return;
+    case 'st-open': { const o = ui.st.open; if (o.has(id)) o.delete(id); else o.add(id); renderView(); return; }
+    case 'st-series': ui.st.series = id || null; renderView(); return;
+    case 'st-cell': statCellToHistory(b.dataset.row, b.dataset.ym); return;
+    case 'perf-month': ui.st.perfYm = S.ymAdd(ui.st.perfYm, +b.dataset.v); renderView(); return;
+    // 고정 지출
+    case 'fx-month': ui.fx.ym = S.ymAdd(ui.fx.ym, +b.dataset.v); renderView(); return;
+    case 'fx-this': ui.fx.ym = S.todayKst().slice(0, 7); renderView(); return;
+    case 'fx-new': dlgFixed(); return;
+    case 'fx-edit': { const f = S.live(doc.fixed).find(x => x.id === id); if (f) dlgFixed(f); return; }
+    case 'fx-enter': { const f = S.live(doc.fixed).find(x => x.id === id); if (f) enterFixed(f); return; }
+    case 'fx-skip': { const f = S.live(doc.fixed).find(x => x.id === id); if (!f) return; S.toggleSkip(f, ui.fx.ym); persist(); renderView(); renderTicker(); toast((f.skips || []).includes(ui.fx.ym) ? `${f.name}: ${Number(ui.fx.ym.slice(5))}월은 건너뜀` : `${f.name}: 건너뛰기 취소`); return; }
+    case 'fx-active': { const f = S.live(doc.fixed).find(x => x.id === id); if (!f) return; f.active = f.active === false; f.updated_at = S.nowIso(); persist(); renderView(); renderTicker(); return; }
+    case 'fx-unlink': readForm(); d.fixed_id = null; rerenderInput(); return;
+    // 티커
+    case 'tk-color': S.setTickerSettings(doc, { color: b.dataset.v }); persist(); refreshManage(); renderTicker(); return;
+    case 'tk-pos': S.setTickerSettings(doc, { position: b.dataset.v }); persist(); refreshManage(); renderTicker(); return;
+    case 'tk-auto': { const k = b.dataset.v; S.setTickerSettings(doc, { [k]: !S.tickerSettings(doc)[k] }); persist(); refreshManage(); renderTicker(); return; }
+    case 'tk-toggle': { const k = itemOf('ticker', id); if (!k) return; k.enabled = !k.enabled; k.updated_at = S.nowIso(); persist(); refreshManage(); renderTicker(); return; }
+    case 'tk-level': { const k = itemOf('ticker', id); if (!k) return; k.level = b.dataset.v; k.updated_at = S.nowIso(); persist(); refreshManage(); renderTicker(); return; }
     case 'sync-click': {
       const st = Sync.getState();
       if (st.status === 'off') { if (ui.view !== 'manage') { if (ui.view === 'input' && ui.formIn === 'page') readForm(); ui.view = 'manage'; renderAll(); } $('#syncState')?.scrollIntoView({ block: 'center', behavior: 'smooth' }); toast('여기서 Google 로그인 후 Drive 동기화를 켤 수 있습니다'); return; }
