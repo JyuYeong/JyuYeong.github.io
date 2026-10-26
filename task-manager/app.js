@@ -6,12 +6,12 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const wide = () => matchMedia('(min-width:700px)').matches;
 
 let doc;
-const DEFAULT_Q = { text: '', statuses: [], urgencies: [], due: 'any', sort: 'due', dir: 'asc', group: 'none', hideDone: true };
+const DEFAULT_Q = { text: '', statuses: [], urgencies: [], topics: [], due: 'any', sort: 'due', dir: 'asc', group: 'none', hideDone: true };
 const ui = { filter: 'all', selectedId: null, viewsOpen: true, railOpen: false };
 function setRail(v) { ui.railOpen = v; document.querySelector('.app').classList.toggle('rail-open', v); renderSide(); }
 let q = { ...DEFAULT_Q };
 const SORT_LABEL = { due: '마감일', start: '시작일', urgency: '긴급도', created: '생성일', title: '제목' };
-const GROUP_LABEL = { none: '없음', project: 'Project', urgency: '긴급도', status: '상태', due: '마감' };
+const GROUP_LABEL = { none: '없음', project: 'Project', topic: '주제', urgency: '긴급도', status: '상태', due: '마감' };
 const DUE_LABEL = { any: '전체', overdue: '지연', today: '오늘', week: '7일 이내', none: '마감일 없음' };
 const URG_RANK = { urgent: 0, high: 1, medium: 2, low: 3 };
 
@@ -47,6 +47,7 @@ const P = {
   bell: '<path d="M4 10v4h3l6 4V6l-6 4z"/><path d="M16.5 9.5a3.5 3.5 0 010 5M19 7a7 7 0 010 10"/>',
   link: '<path d="M10 14a4 4 0 005.66 0l3-3a4 4 0 00-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 00-5.66 0l-3 3a4 4 0 005.66 5.66l1-1"/>',
   pause: '<path d="M9 6v12M15 6v12"/>',
+  tag: '<path d="M3.5 12.5V4.5a1 1 0 011-1h8l8 8.5-8.5 8.5z"/><circle cx="8" cy="8" r="1.6"/>',
 };
 const ic = (name, style = '', cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true"${style ? ` style="${style}"` : ''}>${P[name]}</svg>`;
 
@@ -68,6 +69,8 @@ function stIcon(s) {
 const liveTasks = () => doc.tasks.filter(t => !t.deleted_at);
 const liveProjects = () => doc.projects.filter(p => !p.deleted_at).sort(S.compareProjects);
 const projOf = t => (t.project_id ? liveProjects().find(p => p.id === t.project_id) || null : null);
+const topicOf = t => S.topicOfTask(doc, t);
+const topicById = id => (doc.topics || []).find(g => g.id === id && !g.deleted_at);
 const taskById = id => doc.tasks.find(t => t.id === id && !t.deleted_at);
 const isFin = t => t.status === 'done' || t.status === 'canceled';
 
@@ -76,8 +79,9 @@ function matches(t, now) {
   if (q.statuses.length) { if (!q.statuses.includes(ds) && !q.statuses.includes(t.status)) return false; }
   else if (q.hideDone && isFin(t)) return false;
   if (q.urgencies.length && !q.urgencies.includes(t.urgency)) return false;
+  if (q.topics?.length && !q.topics.includes(topicOf(t)?.id || 'none')) return false;
   if (q.text) {
-    const hay = `${t.title} ${t.memo} ${t.id}`.toLowerCase();
+    const hay = `${t.title} ${t.memo} ${t.id} ${topicOf(t)?.name || ''}`.toLowerCase();
     if (!hay.includes(q.text.toLowerCase())) return false;
   }
   if (q.due !== 'any') {
@@ -115,6 +119,12 @@ function visibleTasks() {
 function groupOf(t, now) {
   switch (q.group) {
     case 'project': { const p = projOf(t); const i = p ? liveProjects().indexOf(p) : 999; return [i, p ? p.name : '미분류']; }
+    case 'topic': {
+      const p = projOf(t), g = topicOf(t);
+      const pi = p ? liveProjects().indexOf(p) : 999;
+      const gi = g ? S.topicsOf(doc, g.project_id, { archived: true }).indexOf(g) : 9999;
+      return [pi * 100000 + gi, `${p ? p.name : '미분류'} · ${g ? g.name : '주제 없음'}`];
+    }
     case 'urgency': return [URG_RANK[t.urgency], URG_LABEL[t.urgency]];
     case 'status': { const ds = S.displayStatus(t, now); return [['delayed', 'in_progress', 'todo', 'done', 'canceled'].indexOf(ds), STATUS_LABEL[ds]]; }
     case 'due': {
@@ -129,7 +139,7 @@ function groupOf(t, now) {
 }
 
 function filterActiveCount() {
-  return (q.text ? 1 : 0) + (q.statuses.length ? 1 : 0) + (q.urgencies.length ? 1 : 0) + (q.due !== 'any' ? 1 : 0) + (q.group !== 'none' ? 1 : 0)
+  return (q.text ? 1 : 0) + (q.statuses.length ? 1 : 0) + (q.urgencies.length ? 1 : 0) + (q.topics?.length ? 1 : 0) + (q.due !== 'any' ? 1 : 0) + (q.group !== 'none' ? 1 : 0)
     + (q.sort !== 'due' || q.dir !== 'asc' ? 1 : 0) + (!q.hideDone && !q.statuses.length ? 1 : 0);
 }
 
@@ -222,6 +232,54 @@ function setBlocker(t, predId) {
   renderPanel();
 }
 
+// ---------- 주제 (M3.4) ----------
+function topicChip(t) {
+  const g = topicOf(t);
+  return g ? `<span class="topic" title="주제: ${esc(g.name)}${g.memo ? ' — ' + esc(g.memo) : ''}">${ic('tag')}<span class="t">${esc(g.name)}</span></span>` : '';
+}
+function topicFieldHtml(t) {
+  const p = projOf(t), g = topicOf(t);
+  const label = g ? `${ic('tag')}<span class="t">${esc(g.name)}</span>` : `<span class="t">${p ? '없음 · 이 일을 하는 이유(주제) 선택' : 'Project를 먼저 고르세요'}</span>`;
+  return `<div><span class="fl" id="lbl-topic">주제</span>
+    <div class="selrow"><button type="button" class="sel${g ? '' : ' empty-val'}" data-act="menu-topic" aria-haspopup="listbox" aria-labelledby="lbl-topic"${p ? '' : ' disabled'}><span class="l">${label}</span>${ic('chev', 'color:var(--muted)')}</button>${g ? `<button type="button" class="icbtn" data-act="clear-topic" aria-label="주제 해제">${ic('x')}</button>` : ''}</div>
+    ${g?.memo ? `<p class="hint" style="margin-top:6px">${esc(g.memo)}</p>` : ''}</div>`;
+}
+// Project를 바꾸면 다른 Project의 주제는 떼어 낸다
+function setProject(t, pid) {
+  const g = t.topic_id ? topicById(t.topic_id) : null;
+  t.project_id = pid;
+  if (t.topic_id && (!g || g.project_id !== pid)) { t.topic_id = null; if (g) toast(`주제 “${g.name}”를 해제했습니다 (다른 Project)`); }
+  touch(t); renderPanel();
+}
+function newTopicDialog(forTaskId, projectId) {
+  const p = liveProjects().find(x => x.id === projectId);
+  openDlg('newtopic', `새 주제${p ? ' · ' + p.name : ''}`, `<form id="newTopicForm" data-task="${forTaskId || ''}" data-pid="${esc(projectId || '')}" class="dlg-b" style="padding:0" autocomplete="off">
+    <input class="in" name="name" maxlength="60" placeholder="주제 이름 (예: sensor asyncWorker kernel traps 이슈)" aria-label="주제 이름" required>
+    <input class="in" name="memo" maxlength="200" placeholder="한 줄 메모 (선택: 케이스 번호, Obsidian 문서 이름 등)" aria-label="주제 메모">
+    <button class="btn primary" type="submit">추가</button></form>`);
+  dlg.querySelector('input[name=name]').focus();
+}
+function topicsHtml() {
+  const projects = liveProjects();
+  const count = gid => liveTasks().filter(t => t.topic_id === gid && topicOf(t)).length;
+  const secs = projects.map(p => {
+    const list = S.topicsOf(doc, p.id, { archived: true });
+    if (!list.length) return '';
+    return `<div class="fsec"><span class="fl"><span class="dot" style="background:${esc(p.color)};display:inline-block;margin-right:6px;vertical-align:-1px"></span>${esc(p.name)}</span>
+      ${list.map(g => `<div class="tprow${g.archived ? ' arch' : ''}">
+        <div class="r1"><input class="in" data-gid="${g.id}" data-gf="name" value="${esc(g.name)}" maxlength="60" aria-label="주제 이름"><span class="tpn">Task ${count(g.id)}</span>
+          <button class="btn sm" data-act="topic-archive" data-id="${g.id}">${g.archived ? '복원' : '보관'}</button>
+          <button class="icbtn sm" data-act="topic-del" data-id="${g.id}" aria-label="${esc(g.name)} 삭제">${ic('trash')}</button></div>
+        <input class="in sm" data-gid="${g.id}" data-gf="memo" value="${esc(g.memo || '')}" maxlength="200" placeholder="한 줄 메모 (선택)" aria-label="주제 메모">
+        <span class="gid">${g.id}</span></div>`).join('')}</div>`;
+  }).join('');
+  const opts = projects.filter(p => !p.archived).map(p => `<option value="${p.id}"${ui.filter === p.id ? ' selected' : ''}>${esc(p.name)}</option>`).join('');
+  return `${secs || '<p class="hint">아직 주제가 없습니다. Task 편집의 “주제”에서 바로 만들 수도 있습니다.</p>'}
+    ${opts ? `<form class="prow" id="newTopicMgr" autocomplete="off"><select class="in" name="pid" aria-label="Project" style="flex:0 0 38%">${opts}</select><input class="in" name="name" maxlength="60" placeholder="새 주제" aria-label="새 주제 이름" required><button class="btn primary" type="submit">추가</button></form>` : '<p class="hint">주제를 만들려면 Project가 먼저 있어야 합니다.</p>'}
+    <p class="hint">주제는 Project에 속하는 꼬리표입니다. 보관한 주제는 선택 목록에서 숨겨지고, 이미 붙은 Task에는 그대로 남습니다. 삭제하면 붙어 있던 Task에서 떼어 냅니다.</p>`;
+}
+const refreshTopicsDlg = () => { if (dlg.open && dlg.dataset.kind === 'topics') dlg.querySelector('.dlg-b').innerHTML = topicsHtml(); };
+
 // ---------- 렌더 ----------
 function cardHtml(t, now) {
   const ds = S.displayStatus(t, now);
@@ -230,7 +288,7 @@ function cardHtml(t, now) {
     <button class="chk" data-act="menu-status" data-id="${t.id}" aria-label="상태: ${STATUS_LABEL[ds]}, 변경하려면 선택" aria-haspopup="menu">${stIcon(ds)}</button>
     <div class="body">
       <div class="row1"><div class="title">${esc(t.title)}</div><button class="idbtn" data-act="copy-id" data-id="${t.id}" aria-label="Task ID ${t.id} 복사">${t.id}</button></div>
-      <div class="meta"><span class="proj"><span class="dot" style="background:${p ? esc(p.color) : 'var(--dot)'}"></span>${p ? esc(p.name) : '미분류'}</span><span class="badge u-${t.urgency}">${URG_LABEL[t.urgency]}</span>${depBadges(t)}</div>
+      <div class="meta"><span class="proj"><span class="dot" style="background:${p ? esc(p.color) : 'var(--dot)'}"></span>${p ? esc(p.name) : '미분류'}</span>${topicChip(t)}<span class="badge u-${t.urgency}">${URG_LABEL[t.urgency]}</span>${depBadges(t)}</div>
       ${datesHtml(t, now)}
       ${t.memo ? `<div class="memo">${esc(t.memo)}</div>` : ''}
     </div>
@@ -289,6 +347,7 @@ function panelHtml(t) {
   <div class="pb">
     <div><label class="fl" for="f-title">제목</label><input class="in" id="f-title" data-f="title" maxlength="200" value="${esc(t.title)}"></div>
     <div><span class="fl" id="lbl-proj">Project</span><button type="button" class="sel" data-act="menu-project" aria-haspopup="listbox" aria-labelledby="lbl-proj"><span class="l"><span class="dot" style="background:${p ? esc(p.color) : 'var(--dot)'}"></span>${p ? esc(p.name) : '미분류'}</span>${ic('chev', 'color:var(--muted)')}</button></div>
+    ${topicFieldHtml(t)}
     ${depFieldHtml(t)}
     <div><span class="fl">상태</span>${seg('status', [['todo', '할 일'], ['in_progress', '진행 중'], ['done', '완료'], ['canceled', '취소됨']], t.status)}</div>
     ${ds === 'delayed' ? '<p class="note">마감이 지나 “지연 중”으로 표시됩니다 (자동). 완료/취소하면 해제됩니다.</p>' : ''}
@@ -461,6 +520,7 @@ function settingsHtml() {
     <div class="kv"><span>브라우저 보존 보장</span><span>${persisted === undefined ? '확인 중' : persisted ? '예' : '아니오'}</span></div>
     <div class="kv"><span>Task / Project</span><span>${liveTasks().length}건 / ${liveProjects().length}개</span></div>
     <button class="btn" data-act="projects">Project 관리</button>
+    <button class="btn" data-act="topics">주제 관리</button>
     <button class="btn" data-act="ticker">티커 관리</button>
     <button class="btn" data-act="export">JSON 내려받기</button>
     <button class="btn danger" data-act="wipe">이 기기 데이터 삭제</button>`;
@@ -474,7 +534,8 @@ function projectsHtml() {
     + `<button class="btn" data-act="archive" data-id="${p.id}">${p.archived ? '복원' : '보관'}</button></div>`).join('');
   return `${rows || '<p class="hint">아직 Project가 없습니다.</p>'}
     <form class="prow" id="newProjForm"><input class="in" name="name" maxlength="40" placeholder="새 Project 이름" aria-label="새 Project 이름" required><button class="btn primary" type="submit">추가</button></form>
-    <p class="hint">보관한 Project는 선택 목록에서 숨겨지고 Task는 그대로 유지됩니다.</p>`;
+    <p class="hint">보관한 Project는 선택 목록에서 숨겨지고 Task는 그대로 유지됩니다.</p>
+    <button class="btn" data-act="topics">주제 관리</button>`;
 }
 
 function newProjectDialog(forTaskId) {
@@ -491,6 +552,7 @@ function filterHtml() {
   return `<div class="fsec"><label class="fl" for="q-text">검색 (제목·메모·ID)</label><input class="in" id="q-text" type="search" value="${esc(q.text)}" maxlength="100"></div>
   <div class="fsec"><span class="fl">상태</span><div class="chips2">${['todo', 'in_progress', 'delayed', 'done', 'canceled'].map(v => chipBtn('q-status', v, STATUS_LABEL[v], q.statuses.includes(v))).join('')}</div></div>
   <div class="fsec"><span class="fl">긴급도</span><div class="chips2">${Object.keys(URG_LABEL).map(v => chipBtn('q-urg', v, URG_LABEL[v], q.urgencies.includes(v))).join('')}</div></div>
+  ${topicFilterHtml()}
   <div class="fsec"><span class="fl">마감</span><div class="chips2">${Object.keys(DUE_LABEL).map(v => chipBtn('q-due', v, DUE_LABEL[v], q.due === v)).join('')}</div></div>
   <div class="fsec"><span class="fl">정렬</span><div class="chips2">${Object.keys(SORT_LABEL).map(v => chipBtn('q-sort', v, SORT_LABEL[v], q.sort === v)).join('')}${chipBtn('q-dir', q.dir === 'asc' ? 'desc' : 'asc', q.dir === 'asc' ? '오름차순 ↑' : '내림차순 ↓', false)}</div></div>
   <div class="fsec"><span class="fl">그룹</span><div class="chips2">${Object.keys(GROUP_LABEL).map(v => chipBtn('q-group', v, GROUP_LABEL[v], q.group === v)).join('')}</div></div>
@@ -500,6 +562,15 @@ function filterHtml() {
     <form class="prow" id="viewForm"><input class="in" name="name" maxlength="30" placeholder="현재 조건을 뷰로 저장" aria-label="뷰 이름" required><button class="btn primary" type="submit">저장</button></form>
   </div>
   <div style="display:flex;gap:8px"><button class="btn" data-act="q-reset" style="flex:1">초기화</button><button class="btn primary" data-act="close-dlg" style="flex:1">${visibleTasks().length}건 보기</button></div>`;
+}
+function topicFilterHtml() {
+  const pid = ui.filter !== 'all' && ui.filter !== 'none' ? ui.filter : null;
+  const sel = q.topics || [];
+  let list = pid ? S.topicsOf(doc, pid) : liveProjects().flatMap(p => S.topicsOf(doc, p.id));
+  list = list.concat((doc.topics || []).filter(g => sel.includes(g.id) && !g.deleted_at && !list.includes(g))); // 고른 것은 보관돼도 보이게
+  if (!list.length && !sel.length) return '';
+  const pname = g => (pid ? '' : `${liveProjects().find(p => p.id === g.project_id)?.name || ''} · `);
+  return `<div class="fsec"><span class="fl">주제</span><div class="chips2">${list.map(g => chipBtn('q-topic', g.id, esc(pname(g) + g.name), sel.includes(g.id))).join('')}${chipBtn('q-topic', 'none', '주제 없음', sel.includes('none'))}</div></div>`;
 }
 function refreshFilter() { savePrefs(); renderList(); renderSide(); if (dlg.dataset.kind === 'filter') dlg.querySelector('.dlg-b').innerHTML = filterHtml(); }
 
@@ -572,9 +643,9 @@ document.addEventListener('click', async e => {
       if (!t2) break;
       const items = liveProjects().filter(p => !p.archived || p.id === t2.project_id).map(p => ({
         label: p.name, icon: `<span class="dot" style="background:${esc(p.color)}"></span>`, cur: t2.project_id === p.id,
-        onPick: () => { t2.project_id = p.id; touch(t2); renderPanel(); },
+        onPick: () => setProject(t2, p.id),
       }));
-      items.push({ label: '미분류', icon: '<span class="dot"></span>', cur: !t2.project_id, onPick: () => { t2.project_id = null; touch(t2); renderPanel(); } });
+      items.push({ label: '미분류', icon: '<span class="dot"></span>', cur: !t2.project_id, onPick: () => setProject(t2, null) });
       items.push({ label: '새 Project', icon: ic('plus'), add: true, onPick: () => newProjectDialog(t2.id) });
       openMenu(el, items);
       break;
@@ -592,6 +663,43 @@ document.addEventListener('click', async e => {
       openMenu(el, items);
       break;
     }
+    case 'menu-topic': {
+      const t2 = taskById(ui.selectedId);
+      if (!t2 || !t2.project_id) break;
+      const cur = topicOf(t2);
+      const items = S.topicsOf(doc, t2.project_id, { archived: true }).filter(g => !g.archived || g.id === cur?.id).map(g => ({
+        label: g.name, sub: g.memo || '', icon: ic('tag'), cur: cur?.id === g.id,
+        onPick: () => { t2.topic_id = g.id; touch(t2); renderPanel(); },
+      }));
+      items.push({ label: '없음', icon: '', cur: !cur, onPick: () => { t2.topic_id = null; touch(t2); renderPanel(); } });
+      items.push({ label: '새 주제', icon: ic('plus'), add: true, onPick: () => newTopicDialog(t2.id, t2.project_id) });
+      openMenu(el, items);
+      break;
+    }
+    case 'clear-topic': { const t2 = taskById(ui.selectedId); if (t2) { t2.topic_id = null; touch(t2); renderPanel(); } break; }
+    case 'topics': if (ui.railOpen) setRail(false); openDlg('topics', '주제 관리', topicsHtml()); break;
+    case 'topic-archive': {
+      const g = topicById(id);
+      if (!g) break;
+      g.archived = !g.archived; g.updated_at = new Date().toISOString();
+      persist(); renderAll(); refreshTopicsDlg();
+      break;
+    }
+    case 'topic-del': {
+      const g = topicById(id);
+      if (!g) break;
+      if (el.dataset.armed !== '1') { // 실수 방지: 한 번 더 눌러야 삭제
+        el.dataset.armed = '1'; el.style.color = 'var(--danger)'; el.setAttribute('aria-label', '한 번 더 누르면 삭제');
+        setTimeout(() => { if (el.isConnected) { el.dataset.armed = ''; el.style.color = ''; el.setAttribute('aria-label', `${g.name} 삭제`); } }, 3000);
+        break;
+      }
+      const n = S.deleteTopic(doc, g);
+      q.topics = (q.topics || []).filter(x => x !== g.id);
+      persist(); renderAll(); refreshTopicsDlg();
+      toast(`주제 “${g.name}” 삭제${n ? ` (Task ${n}건에서 해제)` : ''}`);
+      break;
+    }
+    case 'q-topic': q.topics = tog(q.topics || [], el.dataset.v); refreshFilter(); break;
     case 'clear-blocker': { const t2 = taskById(ui.selectedId); if (t2) setBlocker(t2, null); break; }
     case 'ticker': if (ui.railOpen) setRail(false); openDlg('ticker', '티커', tickerHtml()); break;
     case 'set-tkcolor': case 'set-tkpos': {
@@ -824,6 +932,36 @@ dlg.addEventListener('submit', e => {
   persist(); refreshFilter(); toast(`뷰 “${name}” 저장됨`);
 });
 
+// 주제: 새로 만들기 (Task 편집에서 / 주제 관리에서), 이름·메모 변경
+dlg.addEventListener('submit', e => {
+  if (e.target.id !== 'newTopicForm' && e.target.id !== 'newTopicMgr') return;
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const pid = e.target.id === 'newTopicForm' ? e.target.dataset.pid : String(fd.get('pid'));
+  const r = S.addTopic(doc, pid, String(fd.get('name')), String(fd.get('memo') || ''));
+  if (r.error) { toast(r.error); return; }
+  const forTask = e.target.dataset.task && taskById(e.target.dataset.task);
+  if (forTask && forTask.project_id === pid) { forTask.topic_id = r.topic.id; forTask.updated_at = new Date().toISOString(); }
+  persist(); renderAll();
+  if (r.existed) toast(`같은 이름의 주제 “${r.topic.name}”가 있어 그것을 사용합니다`);
+  if (dlg.dataset.kind === 'topics') { refreshTopicsDlg(); dlg.querySelector('#newTopicMgr input[name=name]')?.focus(); }
+  else dlg.close();
+});
+dlg.addEventListener('change', e => {
+  const gid = e.target.dataset?.gid;
+  if (!gid) return;
+  const g = topicById(gid);
+  if (!g) return;
+  if (e.target.dataset.gf === 'name') {
+    const name = e.target.value.trim().slice(0, 60);
+    const dup = name && S.topicsOf(doc, g.project_id, { archived: true }).some(x => x.id !== g.id && x.name.toLowerCase() === name.toLowerCase());
+    if (!name || dup) { e.target.value = g.name; if (dup) toast('같은 Project에 같은 이름의 주제가 있습니다'); return; }
+    g.name = name;
+  } else g.memo = e.target.value.trim().slice(0, 200);
+  g.updated_at = new Date().toISOString();
+  persist(); renderList(); renderPanel();
+});
+
 // 새 Project 폼 (두 다이얼로그 공용)
 dlg.addEventListener('submit', e => {
   if (e.target.id !== 'newProjForm') return;
@@ -832,7 +970,7 @@ dlg.addEventListener('submit', e => {
   const p = S.addProject(doc, String(name));
   if (!p) return;
   const forTask = e.target.dataset.task && taskById(e.target.dataset.task);
-  if (forTask) { forTask.project_id = p.id; forTask.updated_at = new Date().toISOString(); }
+  if (forTask) { forTask.project_id = p.id; forTask.topic_id = null; forTask.updated_at = new Date().toISOString(); }
   persist();
   renderAll();
   if (dlg.dataset.kind === 'projects') dlg.querySelector('.dlg-b').innerHTML = projectsHtml();

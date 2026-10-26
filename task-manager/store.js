@@ -65,7 +65,7 @@ function uniqueId(prefix, used) {
 const nowIso = () => new Date().toISOString();
 
 export function emptyDoc() {
-  return { schema_version: SCHEMA_VERSION, updated_at: nowIso(), projects: [], tasks: [], views: [], ticker: [], settings: [] };
+  return { schema_version: SCHEMA_VERSION, updated_at: nowIso(), projects: [], tasks: [], views: [], ticker: [], settings: [], topics: [] };
 }
 
 export function createTask(doc, fields = {}) {
@@ -81,6 +81,7 @@ export function createTask(doc, fields = {}) {
     due_date: null,
     due_time: null,
     blocked_by: null, // 선행 Task ID (M3.2, 1개)
+    topic_id: null, // 주제 ID (M3.4, 선택)
     created_at: ts,
     updated_at: ts,
     completed_at: null,
@@ -222,4 +223,37 @@ export async function save(doc) {
 export async function clearAll() {
   mem = null;
   try { await tx('readwrite', s => s.delete(KEY)); } catch { /* 무시 */ }
+}
+
+// ---------- 주제 (M3.4) ----------
+// 주제는 Project에 속하는 꼬리표다. Task는 주제를 0~1개 가진다. 상태·마감은 없다
+export function addTopic(doc, projectId, name, memo = '') {
+  name = String(name || '').trim().slice(0, 60);
+  if (!name) return { error: '주제 이름을 입력하세요' };
+  if (!projectId || !doc.projects.some(p => p.id === projectId && !p.deleted_at)) return { error: 'Project를 먼저 고르세요' };
+  doc.topics ||= [];
+  const dup = doc.topics.find(g => !g.deleted_at && g.project_id === projectId && g.name.toLowerCase() === name.toLowerCase());
+  if (dup) return { topic: dup, existed: true };
+  const ts = nowIso();
+  const g = { id: uniqueId('G-', new Set(doc.topics.map(x => x.id))), project_id: projectId, name, memo: String(memo || '').trim().slice(0, 200), archived: false, created_at: ts, updated_at: ts, deleted_at: null };
+  doc.topics.push(g);
+  return { topic: g };
+}
+export const compareTopics = (a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true, sensitivity: 'base' });
+export function topicsOf(doc, projectId, { archived = false } = {}) {
+  return (doc.topics || []).filter(g => !g.deleted_at && g.project_id === projectId && (archived || !g.archived)).sort(compareTopics);
+}
+// Task의 주제: 지워졌거나 다른 Project의 주제면 없는 것으로 본다
+export function topicOfTask(doc, t) {
+  if (!t.topic_id) return null;
+  const g = (doc.topics || []).find(x => x.id === t.topic_id && !x.deleted_at);
+  return g && g.project_id === t.project_id ? g : null;
+}
+// 주제 삭제: 소프트 삭제하고, 붙어 있던 Task에서 떼어 낸다. 떼어 낸 Task 수를 돌려준다
+export function deleteTopic(doc, g) {
+  const ts = nowIso();
+  g.deleted_at = ts; g.updated_at = ts;
+  let n = 0;
+  for (const t of doc.tasks) if (t.topic_id === g.id) { t.topic_id = null; t.updated_at = ts; n++; }
+  return n;
 }
