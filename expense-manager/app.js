@@ -467,8 +467,12 @@ function formHtml() {
 function fixedLine(d, editing) {
   const f = d.fixed_id ? S.live(doc.fixed).find(x => x.id === d.fixed_id) : null;
   if (f) return `<div class="fxlink">${ic('repeat')}<span>고정 지출 <b>${esc(f.name)}</b> (매달 ${f.day}일)${editing ? '' : ' 입력'}</span><button type="button" class="icbtn sm" data-act="fx-unlink" aria-label="고정 지출 연결 해제" title="연결 해제">${ic('x')}</button></div>`;
-  if (editing) return '';
-  return `<label class="ck"><input type="checkbox" id="fFixed" ${d.makeFixed ? 'checked' : ''}> 매달 고정 지출로 등록 (결제일은 이 날짜의 일, 템플릿도 함께 만듦)</label>`;
+  // 아직 연결되지 않은 지출(새 입력·수정 모두): 새 고정 지출로 등록하거나, 이미 있는 고정 지출에 연결
+  const ym = d.date.slice(0, 7);
+  const taken = new Set(S.live(doc.expenses).filter(e => e.fixed_id && e.date.startsWith(ym) && e.id !== ui.editId).map(e => e.fixed_id));
+  const list = S.fixedOf(doc, { all: false }).filter(f => !taken.has(f.id));
+  return `<label class="ck"><input type="checkbox" id="fFixed" ${d.makeFixed ? 'checked' : ''}> 매달 고정 지출로 등록 (결제일은 이 날짜의 일, 템플릿도 함께 만듦)</label>
+    ${list.length && !d.makeFixed ? `<select class="in sm fxsel" id="fFixedLink" aria-label="이미 있는 고정 지출에 연결"><option value="">또는 이미 있는 고정 지출에 연결…</option>${list.map(f => `<option value="${f.id}">${esc(f.name)} (매달 ${f.day}일${f.amount ? ` · ${S.fmtWon(f.amount)}원` : ''})</option>`).join('')}</select>` : ''}`;
 }
 function inputHtml() {
   if (ui.editId && !S.live(doc.expenses).some(e => e.id === ui.editId)) newDraft();
@@ -601,6 +605,11 @@ function bindInput() {
   $('#qform').addEventListener('submit', e => { e.preventDefault(); saveDraft(false); });
   $('#qform').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveDraft(false); } });
   $('#fMemo').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing && !e.ctrlKey && !e.metaKey) { e.preventDefault(); $('#fMemo').blur(); } });
+  $('#fFixed')?.addEventListener('change', () => { readForm(); rerenderInput(); });
+  $('#fFixedLink')?.addEventListener('change', e => {
+    if (!e.target.value) return;
+    readForm(); ui.draft.fixed_id = e.target.value; ui.draft.makeFixed = false; rerenderInput();
+  });
   $('#fThemeMore')?.addEventListener('change', e => {
     if (!e.target.value) return;
     readForm(); ui.draft.theme_id = e.target.value; ui.touched.add('theme'); rerenderInput();
@@ -622,13 +631,14 @@ function saveDraft(more) {
   const e = r.item;
   let msg = `${editing ? '수정' : '저장'} · ${e.payee} ${won(e.amount)}`;
   // 입력하면서 "매달 고정 지출로 등록": 고정 지출과 같은 이름의 템플릿을 함께 만든다
-  if (!editing && d.makeFixed && !e.fixed_id) {
+  if (d.makeFixed && !e.fixed_id) {
     const base = { day: Number(e.date.slice(8)), amount: e.amount, payee: e.payee, method_id: e.method_id, cat1_id: e.cat1_id, cat2_id: e.cat2_id, memo: e.memo };
     let name = e.payee.slice(0, 30), i = 2;
     while (S.fixedError(doc, { ...base, name }) === '같은 이름의 고정 지출이 있습니다') name = `${e.payee.slice(0, 26)} ${i++}`;
     const fr = S.saveFixed(doc, { ...base, name });
     if (fr.item) {
       e.fixed_id = fr.item.id; e.updated_at = S.nowIso();
+      ui.fx.ym = e.date.slice(0, 7);
       if (!S.templatesOf(doc).some(t => t.name.toLowerCase() === name.toLowerCase())) S.saveTemplate(doc, { ...base, name });
       msg += ` · 고정 지출(매달 ${base.day}일)·템플릿 등록`;
     }
