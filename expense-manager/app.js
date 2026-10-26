@@ -1,7 +1,8 @@
-// Expense Manager: PIN 잠금, 빠른 입력, 지불방식·카테고리 관리(M1) / 내역 표, 템플릿, 테마(M2) (이 기기에만 저장)
+// Expense Manager: PIN 잠금, 빠른 입력, 지불방식·카테고리 관리(M1) / 내역 표, 템플릿, 테마(M2) / Google Drive 동기화, PIN 재설정(M3)
 import * as S from './store.js';
+import * as Sync from './sync.js';
 
-export const VERSION = 'M2';
+export const VERSION = 'M3';
 const MAX_FAILS = 5;
 const FAIL_WAIT_MS = 30 * 1000;
 
@@ -50,13 +51,40 @@ const wideMq = matchMedia('(min-width:700px)');
 // 바뀔 때마다 바로 저장한다 (문서가 작아서 부담이 적고, 탭을 바로 닫아도 잃지 않게). 저장은 순서대로 한 번에 하나씩
 let saving = Promise.resolve();
 function persist() {
-  saving = saving.then(() => S.save(doc)).then(ok => renderSaveLabel(ok));
+  saving = saving.then(() => S.save(doc)).then(() => { renderSaveLabel(); Sync.schedule(); });
   return saving;
 }
-function renderSaveLabel(ok = S.storageOk) {
-  const el = $('#saveLabel');
-  el.textContent = ok ? '이 기기에 저장됨' : '저장 실패 (브라우저 저장소 확인)';
-  el.classList.toggle('bad', !ok);
+// 상단 상태 버튼: 저장·동기화 상태
+const SYNC_TEXT = { off: '사용 안 함', 'needs-auth': 'Google 로그인 필요', syncing: '동기화 중…', ok: '정상', offline: '오프라인', error: '오류' };
+function renderSaveLabel() {
+  const el = $('#syncLabel');
+  if (!el) return;
+  const st = Sync.getState();
+  let [text, cls] = {
+    off: ['이 기기에 저장됨', ''],
+    'needs-auth': ['Google 로그인 필요', 'warn'],
+    syncing: ['동기화 중…', ''],
+    ok: [`동기화됨 ${st.lastSync ? st.lastSync.slice(-5) : ''}`, 'ok'],
+    offline: ['오프라인 · 이 기기에 저장됨', ''],
+    error: ['동기화 오류', 'warn'],
+  }[st.status] || ['', ''];
+  if (!S.storageOk) [text, cls] = ['저장 실패 (브라우저 저장소 확인)', 'warn'];
+  el.textContent = text;
+  el.className = 'sync ' + cls;
+  el.title = st.detail || (st.status === 'off' ? '관리 > 설정에서 Google Drive 동기화를 켤 수 있습니다' : '누르면 지금 동기화');
+  if (unlocked && ui.view === 'manage') { const s2 = $('#syncState'); if (s2) s2.innerHTML = syncStateHtml(); }
+}
+const syncStateHtml = () => { const st = Sync.getState(); return `${SYNC_TEXT[st.status]}${st.lastSync ? ` · 마지막 ${esc(st.lastSync)}` : ''}${st.detail && st.status !== 'ok' ? `<br><span class="note">${esc(st.detail)}</span>` : ''}`; };
+// 다른 기기에서 바뀐 내용이 합쳐졌을 때: 저장하고, 보고 있는 화면을 다시 그린다 (입력 중인 칸과 커서는 유지)
+async function applyMerged(m) {
+  doc = S.normalizeDoc(m);
+  await S.save(doc);
+  if (!unlocked) return;
+  const a = document.activeElement, id = a?.id, sel = id && a.selectionStart != null ? [a.selectionStart, a.selectionEnd] : null;
+  if (ui.view === 'input' && ui.formIn === 'page') readForm();
+  renderNav(); renderView();
+  if (ui.formIn === 'dialog') { const host = $('#dlgForm'); if (host) { readForm(); renderForm(); } }
+  if (id) { const el = document.getElementById(id); if (el && el !== document.activeElement) { el.focus(); if (sel) try { el.setSelectionRange(...sel); } catch { /* 무시 */ } } }
 }
 
 // ---------- 토스트 / 다이얼로그 ----------
@@ -126,12 +154,12 @@ function showGate(html) {
   gate.hidden = false;
   $('#app').hidden = true;
 }
-function padHtml({ title, sub = '', msg = '', msgInfo = false }) {
+function padHtml({ title, sub = '', msg = '', msgInfo = false, leftFn = '' }) {
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(k => `<button data-k="${k}">${k}</button>`).join('');
   return `${LOGO}<h2>${esc(title)}</h2>${sub ? `<p>${sub}</p>` : ''}
     <div class="dots" id="dots" role="status" aria-label="입력한 자릿수 0">${'<i></i>'.repeat(4)}</div>
     <p class="gmsg ${msgInfo ? 'info' : ''}" id="gmsg">${esc(msg)}</p>
-    <div class="pad" id="pad">${keys}<span class="blank"></span><button data-k="0">0</button><button class="fn" data-k="bs" aria-label="지우기">${ic('del')}</button></div>`;
+    <div class="pad" id="pad">${keys}${leftFn || '<span class="blank"></span>'}<button data-k="0">0</button><button class="fn" data-k="bs" aria-label="지우기">${ic('del')}</button></div>`;
 }
 function startPad(onDone) { pad = { buf: '', onDone, busy: false }; drawDots(); applyWait(); }
 function drawDots() {
@@ -164,13 +192,81 @@ function applyWait() {
   };
   if (waitUntil > Date.now()) { tick(); waitTimer = setInterval(tick, 500); }
 }
-gate.addEventListener('click', e => { const k = e.target.closest('#pad button[data-k]'); if (k) padKey(k.dataset.k); });
+gate.addEventListener('click', e => {
+  const k = e.target.closest('#pad button[data-k]');
+  if (k) { padKey(k.dataset.k); return; }
+  const g = e.target.closest('[data-g]');
+  if (g && !g.disabled) gateAction(g.dataset.g);
+});
 document.addEventListener('keydown', e => {
   if (gate.hidden || !pad || dlg().open) return;
   if (/^\d$/.test(e.key)) { padKey(e.key); e.preventDefault(); }
   else if (e.key === 'Backspace') { padKey('bs'); e.preventDefault(); }
 });
 
+// 처음 화면: 새로 시작하거나, 다른 기기에서 쓰던 Drive 데이터를 불러온다
+function setupIntro(msg = '', isErr = true) {
+  pad = null;
+  showGate(`${LOGO}<h1>Expense Manager</h1><p>지출을 빠르게 기록하고 PC·모바일에서 함께 봅니다</p>
+    <button class="btn primary wide" data-g="setup-new">처음 시작하기</button>
+    <button class="btn wide" data-g="setup-import">Drive에 있는 데이터 불러오기</button>
+    <p class="gmsg ${isErr ? '' : 'info'}" id="gmsg">${esc(msg)}</p>
+    <p class="hint">다른 기기에서 이미 Drive 동기화를 켜고 쓰고 있다면 “불러오기”를 누르세요. 그 기기의 PIN으로 열립니다.</p>`);
+}
+async function gateBusy(btn, fn) {
+  const b = gate.querySelector(`[data-g="${btn}"]`);
+  gate.querySelectorAll('[data-g]').forEach(x => { x.disabled = true; });
+  if (b) b.textContent = 'Google 확인 중…';
+  try { return await fn(); }
+  finally { gate.querySelectorAll('[data-g]').forEach(x => { x.disabled = false; }); }
+}
+const gErr = e => (e?.auth ? 'Google 로그인을 마치지 못했습니다. 다시 시도하세요' : e?.offline ? '인터넷 연결을 확인하세요' : e?.message || '알 수 없는 오류');
+async function gateAction(act) {
+  if (act === 'setup-new') { setupPin1(); return; }
+  if (act === 'setup-import') {
+    let r;
+    try { r = await gateBusy(act, () => Sync.fetchRemote()); } catch (e) { setupIntro(gErr(e)); return; }
+    if (!r.doc || !S.setting(r.doc, 'pin')) { setupIntro('Drive에 Expense Manager 데이터가 없습니다. “처음 시작하기”를 누르세요'); return; }
+    doc = S.normalizeDoc(Sync.mergeDocs(doc, r.doc));
+    await S.save(doc);
+    Sync.markSignedIn();
+    Sync.schedule(500);
+    lockScreen(`Drive 데이터를 불러왔습니다 (지출 ${S.live(doc.expenses).length}건). 다른 기기에서 쓰던 PIN을 입력하세요`);
+    return;
+  }
+  if (act === 'forgot') { forgotScreen(); return; }
+  if (act === 'forgot-back') { lockScreen(); return; }
+  if (act === 'forgot-google') {
+    let r;
+    try { r = await gateBusy(act, () => Sync.fetchRemote()); } catch (e) { forgotScreen(gErr(e)); return; }
+    if (!r.doc) { forgotScreen('Drive에 이 앱의 데이터가 없어 Google로 확인할 수 없습니다. Drive 동기화를 켠 Google 계정으로 로그인했는지 확인하세요'); return; }
+    doc = S.normalizeDoc(Sync.mergeDocs(doc, r.doc));
+    await S.save(doc);
+    Sync.markSignedIn();
+    resetPin1();
+  }
+}
+function forgotScreen(msg = '') {
+  pad = null;
+  showGate(`${LOGO}<h2>PIN 재설정</h2>
+    <p>Drive 동기화에 쓰는 Google 계정으로 로그인하면 본인으로 확인하고 새 PIN을 정할 수 있습니다. 데이터는 그대로 남습니다.</p>
+    <button class="btn primary wide" data-g="forgot-google">Google로 확인</button>
+    <button class="link" data-g="forgot-back">PIN 입력으로 돌아가기</button>
+    <p class="gmsg" id="gmsg">${esc(msg)}</p>`);
+}
+function resetPin1(msg = '') {
+  showGate(padHtml({ title: '새 PIN 정하기', sub: 'Google 확인을 마쳤습니다. 새 PIN 4자리를 입력하세요', msg }));
+  startPad(pin => {
+    showGate(padHtml({ title: '새 PIN 확인', sub: '같은 4자리를 한 번 더 입력하세요' }));
+    startPad(async pin2 => {
+      if (pin !== pin2) { resetPin1('두 번 입력한 PIN이 달라요. 다시 정하세요'); return; }
+      S.putSetting(doc, 'pin', await S.makePin(pin));
+      fails = 0; waitUntil = 0;
+      await persist();
+      enterApp('새 PIN을 정했습니다. 다른 기기도 동기화되면 새 PIN으로 열립니다');
+    });
+  });
+}
 function setupPin1(msg = '') {
   showGate(padHtml({ title: '처음 설정: PIN 정하기', sub: '앱을 열 때 입력할 숫자 4자리를 정하세요', msg }));
   startPad(pin => setupPin2(pin));
@@ -186,7 +282,7 @@ function setupPin2(first) {
   });
 }
 function lockScreen(msg = '', info = true) {
-  showGate(padHtml({ title: 'Expense Manager', sub: 'PIN을 입력하세요', msg, msgInfo: info }));
+  showGate(padHtml({ title: 'Expense Manager', sub: 'PIN을 입력하세요', msg, msgInfo: info, leftFn: '<button class="fn" data-g="forgot">PIN을<br>잊었어요</button>' }));
   startPad(async pin => {
     if (await S.checkPin(S.setting(doc, 'pin'), pin)) { fails = 0; enterApp(); return; }
     fails++;
@@ -203,6 +299,7 @@ function enterApp(msg) {
   renderAll();
   if (msg) toast(msg);
   if (ui.view === 'input' && matchMedia('(min-width:700px)').matches) $('#fAmt')?.focus();
+  Sync.schedule(300);
 }
 async function lock() {
   await saving;
@@ -303,13 +400,18 @@ function lastHint(d) {
   const amt = S.parseWon(d.amountText);
   return `<div class="lastrow"><span>최근 ${esc(S.fmtDateShort(e.date))} · ${esc([m?.name, catLabel(e)].filter(Boolean).join(' · '))}</span>${amt !== e.amount ? `<button type="button" class="mini" data-act="use-amount" data-v="${e.amount}">${esc(won(e.amount))} 넣기</button>` : ''}</div>`;
 }
+// 테마: 기간 안이면 자동 선택. 기간 밖이어도 가까운 테마는 칩으로 보여 주고(기본 해제), 그 밖의 테마는 "다른 테마"에서 고른다
 function chipsTheme(d) {
-  const list = S.themesForDate(doc, d.date);
-  const cur = d.theme_id && !list.some(t => t.id === d.theme_id) ? [themeById(d.theme_id)].filter(Boolean) : [];
-  const all = [...list, ...cur];
+  const all = S.themesOf(doc);
   if (!all.length) return '';
-  return `<div><span class="fl" id="lblT">테마</span><div class="chips" role="group" aria-labelledby="lblT">${all.map(t => `<button type="button" class="chip theme" data-act="pick-theme" data-id="${t.id}" aria-pressed="${d.theme_id === t.id}">${ic('tag')}<span>${esc(t.name)}</span><small>${esc(periodTxt(t))}</small></button>`).join('')}</div>
-    ${!ui.touched.has('theme') && d.theme_id ? '<p class="hint">날짜가 테마 기간 안이라 자동으로 골랐습니다. 다시 누르면 해제됩니다.</p>' : ''}</div>`;
+  const near = S.themesNear(doc, d.date);
+  const cur = themeById(d.theme_id);
+  const chips = cur && !near.includes(cur) ? [...near, cur] : near;
+  const rest = all.filter(t => !chips.includes(t));
+  const inRange = cur && S.themeDistance(cur, d.date) === 0;
+  return `<div><span class="fl" id="lblT">테마</span><div class="chips" role="group" aria-labelledby="lblT">${chips.map(t => `<button type="button" class="chip theme${S.themeDistance(t, d.date) ? ' out' : ''}" data-act="pick-theme" data-id="${t.id}" aria-pressed="${d.theme_id === t.id}">${ic('tag')}<span>${esc(t.name)}</span><small>${esc(periodTxt(t))}</small></button>`).join('')}
+    ${rest.length ? `<select class="in sm thsel" id="fThemeMore" aria-label="다른 테마 고르기"><option value="">${chips.length ? '다른 테마…' : '테마 고르기…'}</option>${rest.map(t => `<option value="${t.id}">${esc(t.name)} (${esc(periodTxt(t))})</option>`).join('')}</select>` : ''}</div>
+    ${!ui.touched.has('theme') && d.theme_id && inRange ? '<p class="hint">날짜가 테마 기간 안이라 자동으로 골랐습니다. 다시 누르면 해제됩니다.</p>' : ''}</div>`;
 }
 function tplRow() {
   const list = S.templatesOf(doc);
@@ -483,6 +585,10 @@ function bindInput() {
   $('#qform').addEventListener('submit', e => { e.preventDefault(); saveDraft(false); });
   $('#qform').addEventListener('keydown', e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveDraft(false); } });
   $('#fMemo').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing && !e.ctrlKey && !e.metaKey) { e.preventDefault(); $('#fMemo').blur(); } });
+  $('#fThemeMore')?.addEventListener('change', e => {
+    if (!e.target.value) return;
+    readForm(); ui.draft.theme_id = e.target.value; ui.touched.add('theme'); rerenderInput();
+  });
 }
 function saveDraft(more) {
   readForm();
@@ -815,8 +921,10 @@ function manageHtml() {
         <button class="btn sm" data-act="theme-view" data-id="${t.id}">보기</button><button class="icbtn" data-act="theme-edit" data-id="${t.id}" aria-label="${esc(t.name)} 편집">${ic('pen')}</button>${rmBtn('theme', t)}</div>`; }).join('') : '<p class="hint" style="margin:0 0 4px">예: “포천 여행”을 10.31~11.01로 만들면 그 기간 지출을 입력할 때 자동으로 골라집니다</p>'}
       <div class="addrow"><button class="btn" data-act="theme-new">${ic('plus')}새 테마</button></div></section>
     <section class="card"><h2>${ic('gear')}설정</h2>
-      <div class="setrow"><button class="btn" data-act="pin-change">PIN 변경</button><button class="btn" data-act="export">내보내기 (JSON)</button><button class="btn" data-act="import">가져오기 (JSON)</button></div>
-      <p class="hint">지금은 이 기기(브라우저)에만 저장됩니다. Drive 동기화(M3) 전까지는 PC 한 곳에서 지불방식·카테고리를 만들고 입력하세요. 내보내기 파일로 다른 기기에 옮길 수 있습니다.</p>
+      <div class="kv"><span>Google Drive 동기화</span><span id="syncState">${syncStateHtml()}</span></div>
+      <div class="setrow">${Sync.signedIn() ? '<button class="btn" data-act="sync-now">지금 동기화</button><button class="btn" data-act="sign-out">Google 로그아웃 (동기화 중지)</button>' : '<button class="btn primary" data-act="sign-in">Google 로그인 · Drive 동기화 켜기</button>'}</div>
+      <p class="hint">데이터는 Drive의 <b>내 드라이브 › 10 Expense Manager › db</b>에 <code>em-data.json</code>으로 저장되고, 하루 한 번 백업(최근 14개)을 남깁니다. 바뀐 내용은 몇 초 안에, 그 밖에는 1분마다 맞춥니다.</p>
+      <div class="setrow"><button class="btn" data-act="pin-change">PIN 변경</button><button class="btn" data-act="export">내보내기 (JSON)</button><button class="btn" data-act="import">가져오기 (JSON)</button><button class="btn danger" data-act="wipe">이 기기 데이터 지우기</button></div>
       <p class="ver">Expense Manager ${VERSION} · 지출 ${S.live(doc.expenses).length}건</p></section>
   </div>`;
 }
@@ -1007,6 +1115,24 @@ document.addEventListener('click', async e => {
     case 'theme-new': dlgTheme(); return;
     case 'theme-edit': { const t = themeById(id); if (t) dlgTheme(t); return; }
     case 'theme-view': openThemeInHistory(id); return;
+    case 'sync-click': {
+      const st = Sync.getState();
+      if (st.status === 'off') { if (ui.view !== 'manage') { if (ui.view === 'input' && ui.formIn === 'page') readForm(); ui.view = 'manage'; renderAll(); } $('#syncState')?.scrollIntoView({ block: 'center', behavior: 'smooth' }); toast('여기서 Google 로그인 후 Drive 동기화를 켤 수 있습니다'); return; }
+      if (st.status === 'needs-auth') { Sync.signIn(); return; }
+      if (st.status === 'error' && st.detail) toast(st.detail);
+      Sync.syncNow(); return;
+    }
+    case 'sign-in': await Sync.signIn(); renderView(); return;
+    case 'sign-out': Sync.signOut(); renderView(); toast('동기화를 껐습니다. 이 기기의 데이터는 그대로 남습니다'); return;
+    case 'sync-now': Sync.syncNow(); return;
+    case 'wipe': {
+      if (!(await confirmDialog('이 기기 데이터 지우기', `이 브라우저에 저장된 Expense Manager 데이터(지출 ${S.live(doc.expenses).length}건, 설정, PIN)를 지우고 처음 화면으로 돌아갑니다.${Sync.signedIn() ? ' Drive의 데이터는 지우지 않으므로 “Drive에 있는 데이터 불러오기”로 다시 받을 수 있습니다.' : ' <b>Drive 동기화를 켜지 않아 되살릴 수 없습니다.</b>'}`, '지우기', true))) return;
+      await saving;
+      await S.clearAll();
+      Sync.forgetDevice();
+      location.reload();
+      return;
+    }
     case 'pin-change': dlgPin(); return;
     case 'export': exportJson(); return;
     case 'import': $('#importFile').click(); return;
@@ -1028,7 +1154,8 @@ async function boot() {
   doc = await S.load();
   S.purgeOld(doc);
   if (!S.storageOk) toast('브라우저 저장소를 쓸 수 없어 이 탭을 닫으면 내용이 사라집니다');
-  if (!S.setting(doc, 'pin')) setupPin1();
+  Sync.init({ getDoc: () => doc, applyMerged, onStatus: renderSaveLabel });
+  if (!S.setting(doc, 'pin')) setupIntro('', false);
   else lockScreen();
 }
 boot();

@@ -262,6 +262,16 @@ export const themesOf = doc => live(doc.themes).sort((a, b) => b.start.localeCom
 // 그 날짜를 포함하는 테마들 (최근에 시작한 것 먼저)
 export const themesForDate = (doc, date) => themesOf(doc).filter(t => t.start <= date && date <= t.end);
 export const themeForDate = (doc, date) => themesForDate(doc, date)[0] || null;
+// 날짜와 테마 기간 사이의 일수 (기간 안이면 0)
+export function themeDistance(t, date) {
+  const day = s => Date.parse(s + 'T00:00:00Z') / 86400000;
+  return date < t.start ? day(t.start) - day(date) : date > t.end ? day(date) - day(t.end) : 0;
+}
+// 입력할 때 칩으로 보여 줄 테마: 기간 안 → 가까운 순. 기간 밖은 days일 안의 것만 (여행 준비물처럼 기간 앞뒤 지출용)
+export function themesNear(doc, date, days = 45, max = 6) {
+  return themesOf(doc).map(t => ({ t, d: themeDistance(t, date) })).filter(x => x.d <= days)
+    .sort((a, b) => a.d - b.d || b.t.start.localeCompare(a.t.start)).slice(0, max).map(x => x.t);
+}
 export function themeError(doc, f, id = null) {
   const name = String(f.name || '').trim();
   if (!name) return '테마 이름을 입력하세요';
@@ -417,4 +427,9 @@ export async function save(doc) {
   try { await tx('readwrite', s => s.put(JSON.parse(JSON.stringify(doc)), KEY)); storageOk = true; }
   catch { storageOk = false; }
   return storageOk;
+}
+// 이 기기 데이터 지우기 (설정의 "이 기기 데이터 지우기"에서만 쓴다)
+export async function clearAll() {
+  mem = null;
+  try { await tx('readwrite', s => s.delete(KEY)); } catch { /* 무시 */ }
 }

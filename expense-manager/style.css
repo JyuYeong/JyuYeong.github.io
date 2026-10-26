@@ -81,8 +81,17 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .main{flex:1;min-width:0;display:flex;flex-direction:column}
 .top{flex:none;display:flex;align-items:center;gap:6px;height:56px;padding:0 6px 0 16px;background:var(--surface);border-bottom:1px solid var(--line)}
 .top h1{margin:0;flex:1;min-width:0;font-size:18px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.save{font-size:12px;color:var(--muted);white-space:nowrap}
-.save.bad{color:var(--danger);font-weight:600}
+.sync{font-size:12px;color:var(--muted);padding:0 8px;height:40px;border:0;background:none;border-radius:10px;white-space:nowrap;max-width:46vw;overflow:hidden;text-overflow:ellipsis}
+.sync:hover{background:var(--hover)}
+.sync.ok{color:var(--ok)}
+.sync.warn{color:var(--danger);font-weight:600}
+.btn.wide{width:100%}
+.gbox .hint{text-align:center}
+.pad button.fn{font-size:12.5px;font-weight:600;color:var(--accent-ink);line-height:1.25}
+.kv{display:flex;justify-content:space-between;gap:12px;padding:4px 0 10px;font-size:14px}
+.kv>span:first-child{font-weight:600}
+.kv>span:last-child{text-align:right;color:var(--ink2)}
+code{font-family:var(--num);font-size:12px;background:var(--soft);padding:1px 4px;border-radius:4px}
 .view{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:16px 16px 24px}
 .tabs{flex:none;display:flex;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
 .tab{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;height:58px;border:0;background:none;color:var(--muted);font-size:12px;font-weight:600}
@@ -185,6 +194,7 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .cgroup .c2 .in{height:36px;font-size:14px}
 .cgroup .c2 .addrow .btn{height:36px}
 .setrow{display:flex;flex-wrap:wrap;gap:8px}
+.hint+.setrow{margin-top:12px}
 .ver{font-size:12px;color:var(--muted);margin-top:14px;text-align:center}
 
 /* ---------- 토스트 / 다이얼로그 ---------- */
@@ -206,6 +216,8 @@ dialog::backdrop{background:var(--scrim)}
 .tpl:hover{filter:brightness(.97)}
 .chip.theme .ic{width:15px;height:15px}
 .chip.theme small{font-size:12px;opacity:.75;font-variant-numeric:tabular-nums}
+.chip.theme.out[aria-pressed="false"]{border-style:dashed}
+.thsel{width:auto;max-width:100%;height:38px;border-radius:999px}
 .fsub{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:4px 12px;margin-top:-6px}
 .fsub .link{display:inline-flex;align-items:center;gap:6px;padding:0;font-size:13px}
 .fsub .link .ic{width:15px;height:15px}
