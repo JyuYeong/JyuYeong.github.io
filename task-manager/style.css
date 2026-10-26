@@ -8,7 +8,7 @@
   --u-urgent-bg:#FCE4E1;--u-urgent:#9C1C13;--u-high-bg:#FFEBD2;--u-high:#8A4A06;--u-medium-bg:#E4ECFD;--u-medium:#1F44B0;--u-low-bg:#ECEEF3;--u-low:#4A5163;
   --dep-bg:#EFE7FB;--dep:#5B2E9E;
   --st-todo:#7A8294;--st-prog:#2D5BE3;--st-done:#1E7A46;--st-cancel:#6B7385;--st-late:#D93025;--st-on:#fff;
-  --tk-normal-bg:#E6EDFD;--tk-normal:#1F44B0;--tk-caution-bg:#FFF1D6;--tk-caution:#7A4A00;--tk-must-bg:#B3261E;--tk-must:#fff;
+  --tk-normal-bg:#E6EDFD;--tk-normal:#1F44B0;--tk-caution-bg:#FFF1D6;--tk-caution:#7A4A00;--tk-must-bg:#B3261E;--tk-must:#fff;--tk-caution-glow:#FFC24D;--tk-must-glow:#FF5C4F;
 }
 @media (prefers-color-scheme:dark){
   :root{
@@ -20,7 +20,7 @@
     --u-urgent-bg:#3D1A17;--u-urgent:#FF9C92;--u-high-bg:#3A2812;--u-high:#FFB866;--u-medium-bg:#1E2A4A;--u-medium:#A9C0FF;--u-low-bg:#262B35;--u-low:#B4BBC8;
     --dep-bg:#2C2142;--dep:#CDB4FF;
     --st-todo:#8F97A8;--st-prog:#6E95FF;--st-done:#4CC38A;--st-cancel:#7D8595;--st-late:#FF6B5E;--st-on:#10131A;
-    --tk-normal-bg:#1E2A4A;--tk-normal:#A9C0FF;--tk-caution-bg:#3A2C10;--tk-caution:#FFC766;--tk-must-bg:#C2392F;--tk-must:#fff;
+    --tk-normal-bg:#1E2A4A;--tk-normal:#A9C0FF;--tk-caution-bg:#3A2C10;--tk-caution:#FFC766;--tk-must-bg:#C2392F;--tk-must:#fff;--tk-caution-glow:#8C6210;--tk-must-glow:#FF6B5E;
   }
 }
 *{box-sizing:border-box}
@@ -301,3 +301,15 @@ input[type="date"].in::-webkit-calendar-picker-indicator{margin-left:2px}
 .btn.sm{height:36px;padding:0 10px;font-size:13px}
 .in.sm{height:38px;font-size:14px}
 .mi .sub{max-width:45%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---------- M3.5: 주의·필독 띠 네온 발광 (항상 반복, 동작 줄이기 설정 시 정지) ---------- */
+/* 띠 위에 반투명 덧칠(::before)을 두고 투명도만 바꾼다 (다시 그리기 부담이 적음) */
+.ticker.c-caution::before,.ticker.c-must::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:0;will-change:opacity}
+.ticker.c-caution::before{background:var(--tk-caution-glow);box-shadow:inset 0 0 14px 2px var(--tk-caution-glow);animation:tk-glow-c 3s ease-in-out infinite}
+.ticker.c-must::before{background:var(--tk-must-glow);box-shadow:inset 0 0 16px 3px #fff;animation:tk-glow-m 1.6s ease-in-out infinite}
+.ticker .tk-track{position:relative}
+@keyframes tk-glow-c{0%,100%{opacity:0}50%{opacity:.55}}
+@keyframes tk-glow-m{0%,100%{opacity:0}45%{opacity:.6}60%{opacity:.5}}
+@media (prefers-reduced-motion:reduce){
+  .ticker.c-caution::before,.ticker.c-must::before{animation:none;opacity:0}
+}

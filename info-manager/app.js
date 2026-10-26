@@ -4,7 +4,7 @@ import * as S from './store.js';
 import * as Q from './search.js';
 import * as Sync from './sync.js';
 
-export const VERSION = 'M3.2';
+export const VERSION = 'M3.3';
 const IDLE_MS = 5 * 60 * 1000;
 const MAX_FAILS = 5;
 const FAIL_WAIT_MS = 30 * 1000;
@@ -759,7 +759,7 @@ function draftDirty() {
   const d = ui.draft;
   if (!d) return false;
   readForm();
-  const o = d.orig || (d.kind === 'account' ? { service: '', aliases: [], login_type: 'direct', provider_id: null, social_account_id: null, login_id: '', password: '', url: '', memo: '' } : d.kind === 'field' ? { name: '', value: '', masked: true } : { title: '', body: '' });
+  const o = d.orig || (d.kind === 'account' ? { service: '', aliases: [], login_type: 'direct', provider_id: null, social_account_id: null, login_id: '', password: '', url: '', memo: '' } : d.kind === 'field' ? { name: '', value: '', masked: d.startMasked ?? true } : { title: '', body: '' });
   const keys = d.kind === 'account' ? ['service', 'login_type', 'provider_id', 'social_account_id', 'login_id', 'password', 'url', 'memo'] : d.kind === 'field' ? ['name', 'value', 'masked'] : ['title', 'body'];
   return keys.some(k => (d[k] ?? '') !== (o[k] ?? '')) || (d.kind === 'account' && (JSON.stringify(d.aliases) !== JSON.stringify(o.aliases)
     || JSON.stringify(d.extra.filter(x => x.key.trim() || x.value).map(x => [x.key.trim(), x.value])) !== JSON.stringify((o.extra || []).map(x => [x.key, x.value]))));
@@ -776,7 +776,8 @@ function formError(msg, focus) {
   if (e) { e.textContent = msg; e.hidden = false; }
   if (focus) { $(focus)?.classList.add('err'); $(focus)?.focus(); }
 }
-function saveDraft() {
+// more: 업무 새 항목에서 '계속 추가' (저장 후 같은 폴더에 빈 입력창, 값 가리기는 직전 설정 유지)
+function saveDraft(more = false) {
   readForm();
   const d = ui.draft;
   if (d.kind === 'account') {
@@ -801,6 +802,13 @@ function saveDraft() {
     ui.draft = null;
     ui.revealed.clear();
     save('work');
+    if (more && !node) {
+      ui.draft = { kind: 'field', isNew: true, id: null, parent: r.node.parent_id, orig: null, name: '', value: '', masked: d.masked, startMasked: d.masked, showVal: true };
+      renderAll();
+      $('#fKey')?.focus();
+      toast(`“${r.node.name}” 저장 · 다음 항목을 입력하세요`);
+      return;
+    }
     renderAll();
     toast('저장했습니다');
     return;
@@ -945,7 +953,7 @@ function fieldForm(d) {
       <p class="note" id="formErr" hidden></p>
     </form>
     <div class="pf">${d.isNew ? '' : `<button class="icbtn" data-act="move" data-id="${d.id}" aria-label="다른 폴더로 이동" title="다른 폴더로 이동">${ic('move')}</button><button class="icbtn" data-act="delete" aria-label="삭제" title="삭제" style="color:var(--danger)">${ic('trash')}</button>`}
-      <span class="sp"></span><button class="btn" data-act="cancel">취소</button><button class="btn primary" data-act="save">저장</button></div>`;
+      <span class="sp"></span><button class="btn" data-act="cancel">취소</button>${d.isNew ? '<button class="btn" data-act="save-more" title="저장하고 같은 폴더에 새 항목 입력">계속 추가</button>' : ''}<button class="btn primary" data-act="save">저장</button></div>`;
 }
 // 새 폴더: 'a/b/c'처럼 쓰면 없는 단계만 만든다. 여러 단계를 쓰면 마지막 폴더로 들어간다
 function newFolder() {
@@ -1263,6 +1271,7 @@ document.addEventListener('click', async e => {
     }
     case 'cancel': if (await leaveDraft()) { renderList(); renderPanel(); } return;
     case 'save': saveDraft(); return;
+    case 'save-more': saveDraft(true); return;
     case 'close': if (await leaveDraft()) closePanel(); return;
     case 'reveal': {
       const k = b.dataset.key;
