@@ -15,10 +15,11 @@ const GROUP_LABEL = { none: '없음', project: 'Project', topic: '주제', urgen
 const DUE_LABEL = { any: '전체', overdue: '지연', today: '오늘', week: '7일 이내', none: '마감일 없음' };
 const URG_RANK = { urgent: 0, high: 1, medium: 2, low: 3 };
 
+// 새로 열거나 새로고침하면 Project는 항상 '전체'로 시작한다 (M3.6.1). 필터·정렬 조건은 그대로 복원
 function loadPrefs() {
   try {
     const p = JSON.parse(localStorage.getItem('tm-ui') || 'null');
-    if (p) { q = { ...DEFAULT_Q, ...p.q }; ui.filter = p.filter || 'all'; ui.viewsOpen = p.viewsOpen !== false; ui.activeOpen = p.activeOpen !== false; ui.showActive = p.showActive !== false; }
+    if (p) { q = { ...DEFAULT_Q, ...p.q }; ui.viewsOpen = p.viewsOpen !== false; ui.activeOpen = p.activeOpen !== false; ui.showActive = p.showActive !== false; }
   } catch { /* 무시 */ }
 }
 function savePrefs() {
