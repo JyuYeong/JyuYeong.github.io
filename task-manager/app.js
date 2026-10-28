@@ -7,7 +7,7 @@ const wide = () => matchMedia('(min-width:700px)').matches;
 
 let doc;
 const DEFAULT_Q = { text: '', statuses: [], urgencies: [], topics: [], due: 'any', sort: 'due', dir: 'asc', group: 'none', hideDone: true };
-const ui = { filter: 'all', selectedId: null, viewsOpen: true, railOpen: false };
+const ui = { filter: 'all', selectedId: null, viewsOpen: true, railOpen: false, activeOpen: true, showActive: true };
 function setRail(v) { ui.railOpen = v; document.querySelector('.app').classList.toggle('rail-open', v); renderSide(); }
 let q = { ...DEFAULT_Q };
 const SORT_LABEL = { due: '마감일', start: '시작일', urgency: '긴급도', created: '생성일', title: '제목' };
@@ -18,11 +18,11 @@ const URG_RANK = { urgent: 0, high: 1, medium: 2, low: 3 };
 function loadPrefs() {
   try {
     const p = JSON.parse(localStorage.getItem('tm-ui') || 'null');
-    if (p) { q = { ...DEFAULT_Q, ...p.q }; ui.filter = p.filter || 'all'; ui.viewsOpen = p.viewsOpen !== false; }
+    if (p) { q = { ...DEFAULT_Q, ...p.q }; ui.filter = p.filter || 'all'; ui.viewsOpen = p.viewsOpen !== false; ui.activeOpen = p.activeOpen !== false; ui.showActive = p.showActive !== false; }
   } catch { /* 무시 */ }
 }
 function savePrefs() {
-  try { localStorage.setItem('tm-ui', JSON.stringify({ q, filter: ui.filter, viewsOpen: ui.viewsOpen })); } catch { /* 무시 */ }
+  try { localStorage.setItem('tm-ui', JSON.stringify({ q, filter: ui.filter, viewsOpen: ui.viewsOpen, activeOpen: ui.activeOpen, showActive: ui.showActive })); } catch { /* 무시 */ }
 }
 
 const STATUS_LABEL = { todo: '할 일', in_progress: '진행 중', done: '완료', canceled: '취소됨', delayed: '지연 중' };
@@ -160,6 +160,8 @@ function touch(t) {
   persist();
   renderList();
   renderSide();
+  const ft = $('#tsFoot');
+  if (ft && ui.selectedId === t.id) ft.innerHTML = tsFootHtml(t);
 }
 
 // ---------- 동기화 상태 표시 ----------
@@ -280,6 +282,90 @@ function topicsHtml() {
 }
 const refreshTopicsDlg = () => { if (dlg.open && dlg.dataset.kind === 'topics') dlg.querySelector('.dlg-b').innerHTML = topicsHtml(); };
 
+// ---------- 날짜별 체크 (M3.6) ----------
+// 카드: 기간이 7일 이하면 전부, 길면 오늘을 가운데 둔 7칸 (기간 밖이면 처음/끝 7칸)
+function dayWindow(t, today) {
+  const all = S.rangeDays(t.start_date, t.due_date);
+  if (all.length <= 7) return { days: all, cutL: false, cutR: false };
+  let i = all.indexOf(today);
+  if (i < 0) i = today < t.start_date ? 0 : all.length - 1;
+  const st = Math.max(0, Math.min(i - 3, all.length - 7));
+  return { days: all.slice(st, st + 7), cutL: st > 0, cutR: st + 7 < all.length };
+}
+const workedCount = (t, upto) => (t.worked_days || []).filter(d => d >= t.start_date && d <= t.due_date && d <= upto).length;
+function dayStripHtml(t, now) {
+  if (!S.dayCheckOn(t)) return '';
+  const today = now.date;
+  const { days, cutL, cutR } = dayWindow(t, today);
+  const can = !isFin(t);
+  const cell = d => {
+    const w = S.isWorked(t, d);
+    const cls = `dc${w ? ' on' : ''}${d === today ? ' today' : d > today ? ' fut' : ''}`;
+    const inner = `<i></i><b>${+d.slice(8)}</b>`;
+    if (d === today && can) return `<button type="button" class="${cls}" data-act="dc-today" data-id="${t.id}" aria-pressed="${w}" aria-label="오늘(${md(d)}) 손댄 날로 ${w ? '표시됨, 해제하려면 선택' : '표시'}" title="오늘 손댄 날로 표시/해제">${inner}</button>`;
+    return `<span class="${cls}" title="${md(d)} ${w ? '손댐' : d > today ? '' : '안 함'}">${inner}</span>`;
+  };
+  const sm = isFin(t) ? { text: `${workedCount(t, today)}일 손댐`, warn: false } : S.dayCheckSummary(t, today);
+  const total = S.rangeDays(t.start_date, t.due_date).length;
+  return `<div class="dstrip" aria-label="날짜별 체크: ${total}일 중 ${workedCount(t, today)}일 손댐, ${sm.text}">${cutL ? '<span class="dcut" aria-hidden="true">…</span>' : ''}${days.map(cell).join('')}${cutR ? '<span class="dcut" aria-hidden="true">…</span>' : ''}<span class="dsum${sm.warn ? ' warn' : ''}">${sm.text}</span></div>`;
+}
+// 상세 패널: 기간 전체를 요일 맞춘 달력으로 (미래 날짜는 고를 수 없음)
+function dayCalHtml(t, now) {
+  if (!t.start_date || !t.due_date) return '<p class="hint">시작일과 마감일을 모두 넣으면 날짜별 체크가 표시됩니다.</p>';
+  if (t.start_date > t.due_date) return '<p class="hint">시작일이 마감일보다 늦어 날짜별 체크를 표시할 수 없습니다.</p>';
+  let days = S.rangeDays(t.start_date, t.due_date);
+  const cut = days.length > S.DC_MAX_DAYS;
+  if (cut) days = days.slice(-S.DC_MAX_DAYS);
+  const today = now.date;
+  const lead = S.weekdayOf(days[0]);
+  const cells = days.map((d, i) => {
+    const w = S.isWorked(t, d);
+    const fut = d > today;
+    const label = (i === 0 || d.endsWith('-01')) ? `${+d.slice(5, 7)}/${+d.slice(8)}` : `${+d.slice(8)}`;
+    return `<button type="button" class="cd${w ? ' on' : ''}${d === today ? ' today' : ''}" data-act="dc-day" data-d="${d}" aria-pressed="${w}" aria-label="${md(d)}${d === today ? ' 오늘' : ''} ${w ? '손댐' : '안 함'}"${fut ? ' disabled' : ''}><i></i><b>${label}</b></button>`;
+  }).join('');
+  const sm = S.dayCheckSummary(t, today);
+  return `<div class="dcal">${['일', '월', '화', '수', '목', '금', '토'].map(x => `<span class="wd">${x}</span>`).join('')}${'<span></span>'.repeat(lead)}${cells}</div>
+    <p class="hint" style="margin-top:6px">${days.length}일 중 ${workedCount(t, today)}일 손댐${isFin(t) ? '' : ' · ' + sm.text}${cut ? ` · 기간이 길어 마지막 ${S.DC_MAX_DAYS}일만 표시` : ''}. 손댄 날을 누르세요 (카드에서는 오늘만 누를 수 있음).</p>`;
+}
+function markDay(t, date, fromPanel = false) {
+  if (!t || date > S.todayKST()) return;
+  const on = S.toggleWorked(t, date);
+  let msg = '';
+  if (on && t.status === 'todo') { t.status = 'in_progress'; t.completed_at = null; msg = '상태를 “진행 중”으로 바꿨습니다'; }
+  touch(t);
+  if (ui.selectedId === t.id) {
+    renderPanel();
+    if (fromPanel) $(`#panel [data-act="dc-day"][data-d="${date}"]`)?.focus();
+  }
+  if (msg) toast(msg);
+}
+// 진행 기간 중 묶음: 지금 목록에 보이는 Task 중 날짜별 체크가 켜져 있고 오늘이 기간 안인 것. 오래 손 안 댄 순
+function activeSectionHtml(items, now) {
+  if (!ui.showActive) return '';
+  const list = items.filter(t => S.dayCheckOn(t) && !isFin(t) && t.start_date <= now.date && now.date <= t.due_date);
+  if (!list.length) return '';
+  const lastOf = t => (t.worked_days || []).filter(d => d >= t.start_date && d <= now.date).pop() || '';
+  list.sort((a, b) => (lastOf(a) < lastOf(b) ? -1 : lastOf(a) > lastOf(b) ? 1 : S.compareDefault(a, b)));
+  const rows = ui.activeOpen ? list.map(t => {
+    const p = projOf(t);
+    return `<article class="arow" data-act="open" data-id="${t.id}"${ui.selectedId === t.id ? ' aria-current="true"' : ''}>
+      <div class="at"><span class="dot" style="background:${p ? esc(p.color) : 'var(--dot)'}" title="${p ? esc(p.name) : '미분류'}"></span><span class="title">${esc(t.title)}</span></div>${dayStripHtml(t, now)}</article>`;
+  }).join('') : '';
+  return `<section class="asec"><button type="button" class="gh ah" data-act="toggle-active" aria-expanded="${ui.activeOpen}">${ic('chev')}진행 기간 중<span class="n">${list.length}</span></button>${rows}</section>`;
+}
+const kstFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+function fmtTs(iso) {
+  const d = iso ? new Date(iso) : null;
+  if (!d || isNaN(d)) return '';
+  const p = Object.fromEntries(kstFmt.formatToParts(d).map(x => [x.type, x.value]));
+  return `${md(`${p.year}-${p.month}-${p.day}`)} ${p.hour}:${p.minute}`;
+}
+function tsFootHtml(t) {
+  return [['생성', t.created_at], ['수정', t.updated_at], ['완료', t.status === 'done' ? t.completed_at : null]]
+    .filter(([, v]) => fmtTs(v)).map(([l, v]) => `<span>${l} ${fmtTs(v)}</span>`).join('');
+}
+
 // ---------- 렌더 ----------
 function cardHtml(t, now) {
   const ds = S.displayStatus(t, now);
@@ -290,6 +376,7 @@ function cardHtml(t, now) {
       <div class="row1"><div class="title">${esc(t.title)}</div><button class="idbtn" data-act="copy-id" data-id="${t.id}" aria-label="Task ID ${t.id} 복사">${t.id}</button></div>
       <div class="meta"><span class="proj"><span class="dot" style="background:${p ? esc(p.color) : 'var(--dot)'}"></span>${p ? esc(p.name) : '미분류'}</span>${topicChip(t)}<span class="badge u-${t.urgency}">${URG_LABEL[t.urgency]}</span>${depBadges(t)}</div>
       ${datesHtml(t, now)}
+      ${dayStripHtml(t, now)}
       ${t.memo ? `<div class="memo">${esc(t.memo)}</div>` : ''}
     </div>
   </article>`;
@@ -306,6 +393,7 @@ function renderList() {
     items.forEach(t => { const [o, l] = groupOf(t, now); const k = o + '|' + l; if (!groups.has(k)) groups.set(k, { o, l, arr: [] }); groups.get(k).arr.push(t); });
     html = [...groups.values()].sort((a, b) => a.o - b.o).map(g => `<div class="gh">${esc(g.l)}<span class="n">${g.arr.length}</span></div>${g.arr.map(t => cardHtml(t, now)).join('')}`).join('');
   }
+  if (items.length) html = activeSectionHtml(items, now) + html;
   const fc = filterActiveCount();
   $('#fcnt').hidden = !fc; $('#fcnt').textContent = fc;
   $('#sortLbl').textContent = `${SORT_LABEL[q.sort]} ${q.dir === 'asc' ? '↑' : '↓'}${q.group !== 'none' ? ' · ' + GROUP_LABEL[q.group] + '별' : ''}`;
@@ -357,7 +445,10 @@ function panelHtml(t) {
       <button type="button" class="sw" role="switch" data-act="toggle-allday" aria-checked="${allDay}"${t.due_date ? '' : ' disabled'}><i></i>종일</button>
       <input class="in" type="time" data-f="due_time" aria-label="마감 시각" value="${t.due_time || ''}"${allDay || !t.due_date ? ' disabled' : ''}>
     </div>
+    <div class="dcfield"><button type="button" class="sw" role="switch" data-act="toggle-daycheck" aria-checked="${!!t.day_check}"><i></i>날짜별 체크 (손댄 날 표시)</button>
+      ${t.day_check ? dayCalHtml(t, S.nowKST()) : ''}</div>
     <div><label class="fl" for="f-memo">메모 (한 줄)</label><input class="in" id="f-memo" data-f="memo" maxlength="200" value="${esc(t.memo)}"></div>
+    <p class="tsfoot" id="tsFoot">${tsFootHtml(t)}</p>
   </div>
   <div class="pf"><span class="lbl">Task ID</span><button class="idbtn" data-act="copy-id" data-id="${t.id}" aria-label="Task ID ${t.id} 복사">${ic('copy', 'width:14px;height:14px')}${t.id}</button><button class="del" data-act="delete" data-id="${t.id}">${ic('trash')}삭제</button></div>`;
 }
@@ -518,6 +609,7 @@ function settingsHtml() {
     ${Sync.getState().signedIn ? '<button class="btn" data-act="sync-now">지금 동기화</button><button class="btn" data-act="sign-out">Google 로그아웃 (동기화 중지)</button>' : '<button class="btn primary" data-act="sign-in">Google 로그인 · Drive 동기화 켜기</button>'}
     <div class="kv"><span>저장 위치</span><span>${S.storageOk ? '이 기기 (IndexedDB)' : '저장 불가 (임시)'}</span></div>
     <div class="kv"><span>브라우저 보존 보장</span><span>${persisted === undefined ? '확인 중' : persisted ? '예' : '아니오'}</span></div>
+    <button type="button" class="sw" role="switch" data-act="toggle-showactive" aria-checked="${ui.showActive}"><i></i>목록 맨 위에 “진행 기간 중” 묶음 표시 (이 기기)</button>
     <div class="kv"><span>Task / Project</span><span>${liveTasks().length}건 / ${liveProjects().length}개</span></div>
     <button class="btn" data-act="projects">Project 관리</button>
     <button class="btn" data-act="topics">주제 관리</button>
@@ -631,6 +723,19 @@ document.addEventListener('click', async e => {
     case 'open':
       ui.selectedId = id; renderPanel(); renderList(); break;
     case 'close-panel': closePanel(); break;
+    case 'dc-today': if (t) markDay(t, S.todayKST()); break;
+    case 'dc-day': markDay(taskById(ui.selectedId), el.dataset.d, true); break;
+    case 'toggle-daycheck': {
+      const t2 = taskById(ui.selectedId);
+      if (!t2) break;
+      t2.day_check = !t2.day_check;
+      if (!Array.isArray(t2.worked_days)) t2.worked_days = [];
+      touch(t2); renderPanel();
+      $('#panel [data-act="toggle-daycheck"]')?.focus();
+      break;
+    }
+    case 'toggle-active': ui.activeOpen = !ui.activeOpen; savePrefs(); renderList(); $('#list [data-act="toggle-active"]')?.focus(); break;
+    case 'toggle-showactive': ui.showActive = !ui.showActive; savePrefs(); renderList(); dlg.querySelector('.dlg-b').innerHTML = settingsHtml(); dlg.querySelector('[data-act="toggle-showactive"]')?.focus(); break;
     case 'menu-status': {
       if (!t) break;
       openMenu(el, ['todo', 'in_progress', 'done', 'canceled'].map(v => ({

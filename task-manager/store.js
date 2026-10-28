@@ -82,6 +82,8 @@ export function createTask(doc, fields = {}) {
     due_time: null,
     blocked_by: null, // 선행 Task ID (M3.2, 1개)
     topic_id: null, // 주제 ID (M3.4, 선택)
+    day_check: false, // 날짜별 체크 사용 (M3.6)
+    worked_days: [], // 손댄 날 'YYYY-MM-DD' (M3.6)
     created_at: ts,
     updated_at: ts,
     completed_at: null,
@@ -256,4 +258,39 @@ export function deleteTopic(doc, g) {
   let n = 0;
   for (const t of doc.tasks) if (t.topic_id === g.id) { t.topic_id = null; t.updated_at = ts; n++; }
   return n;
+}
+
+// ---------- 날짜별 체크 (M3.6) ----------
+// Task마다 켜고(day_check) 손댄 날만 worked_days에 'YYYY-MM-DD'로 저장한다.
+// 기간(시작일~마감일)을 바꿔도 기록은 지우지 않고, 기간 밖의 날은 표시만 하지 않는다.
+export const DC_MAX_DAYS = 120; // 기간이 이보다 길면 상세 달력은 마지막 120일만 보여 준다
+export function addDays(date, n) {
+  const [y, m, d] = date.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+export const weekdayOf = date => { const [y, m, d] = date.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)).getUTCDay(); };
+// 날짜별 체크를 보여 줄 수 있는 Task인지 (스위치가 켜져 있고 시작일 ≤ 마감일)
+export const dayCheckOn = t => !!t.day_check && !!t.start_date && !!t.due_date && t.start_date <= t.due_date;
+export function rangeDays(from, to) {
+  const out = [];
+  for (let d = from; d <= to && out.length < 10000; d = addDays(d, 1)) out.push(d);
+  return out;
+}
+export const isWorked = (t, date) => Array.isArray(t.worked_days) && t.worked_days.includes(date);
+// 켜면 true, 끄면 false를 돌려준다
+export function toggleWorked(t, date) {
+  const set = new Set(Array.isArray(t.worked_days) ? t.worked_days : []);
+  const on = !set.has(date);
+  if (on) set.add(date); else set.delete(date);
+  t.worked_days = [...set].sort();
+  return on;
+}
+// 카드 요약: { text, warn }
+export function dayCheckSummary(t, today = todayKST()) {
+  if (today < t.start_date) return { text: `D-${dayDiff(today, t.start_date)} 시작`, warn: false };
+  const last = (t.worked_days || []).filter(d => d >= t.start_date && d <= today).pop();
+  if (!last) return { text: '아직 안 함', warn: dayDiff(t.start_date, today) >= 1 };
+  if (last === today) return { text: '오늘 함', warn: false };
+  const n = dayDiff(last, today);
+  return { text: `${n}일째 안 함`, warn: n >= 2 };
 }
