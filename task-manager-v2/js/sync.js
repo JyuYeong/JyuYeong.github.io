@@ -7,12 +7,16 @@
 //  - 올리기 직전에 revision을 다시 확인해 그 사이 다른 기기가 저장했으면 처음부터 다시 (최대 3회)
 import { CLIENT_ID, FOLDER_ID, BACKUP_FOLDER_ID, SCOPE } from './config.js';
 import * as S from './store.js';
+import * as Vault from './vault.js';
+import { V } from './vault.js';
 
 const API = 'https://www.googleapis.com/drive/v3';
 const UP = 'https://www.googleapis.com/upload/drive/v3';
 const CORE = 'tm2-core.json';
 const LOG_RE = /^tm2-logs-(\d{4}-\d{2})\.json$/;
 const logName = month => `tm2-logs-${month}.json`;
+const VMETA = 'tm2-vault-meta.json';
+const VDATA = 'tm2-vault.json';
 const KEEP_BACKUPS = 14;
 const PURGE_MS = 30 * 86400000;
 const P = 'tm2-sync-';
@@ -172,12 +176,12 @@ function create(name, text, parent = FOLDER_ID) {
 }
 
 // 하루 한 번(기기별), 전체 사본을 backup 폴더에 남기고 최근 14개만 유지
-async function dailyBackup(core, logs) {
+async function dailyBackup(core, logs, vault) {
   const today = S.todayKST();
   if (ls('backup') === today) return;
   const name = `tm2-backup-${today.replaceAll('-', '')}.json`;
   const ex = await api(`${API}/files?q=${qs(`'${BACKUP_FOLDER_ID}' in parents and name='${name}' and trashed=false`)}&fields=files(id)`);
-  if (!ex.files?.length) await create(name, JSON.stringify({ core, logs }), BACKUP_FOLDER_ID);
+  if (!ex.files?.length) await create(name, JSON.stringify({ core, logs, vault }), BACKUP_FOLDER_ID);
   ls('backup', today);
   const all = await api(`${API}/files?q=${qs(`'${BACKUP_FOLDER_ID}' in parents and name contains 'tm2-backup-' and trashed=false`)}&orderBy=name desc&pageSize=100&fields=files(id,name)`);
   for (const f of (all.files || []).slice(KEEP_BACKUPS)) {
@@ -190,7 +194,7 @@ async function dailyBackup(core, logs) {
 export function resetSeen() { seen = {}; ls('seen', null); }
 async function syncOnce() {
   const c0 = hooks.getCore(), l0 = hooks.getLogs();
-  if (Object.keys(seen).length && !c0.tasks.length && !c0.labels.length && !l0.logs.length) resetSeen();
+  if (Object.keys(seen).length && !c0.tasks.length && !c0.labels.length && !l0.logs.length && !V.meta) resetSeen();
   const list = await listFiles();
   // 1. 원격에서 바뀐 파일 내려받기
   const remote = {};
@@ -231,7 +235,83 @@ async function syncOnce() {
   }
   Object.assign(seen, updates);
   saveSeen();
+  return syncVault(list);
+}
+
+// ---------- 보안 영역 ----------
+// 메타(평문, 비밀 값 없음)와 암호문 문서를 주고받는다. 서버(Drive)는 평문을 보지 못한다
+//  - 잠금 해제 중: 원격 문서를 복호화해 항목별로 병합하고, 달라졌으면 다시 암호화해 올린다
+//  - 잠긴 상태: 이 기기에 고친 것이 없으면 원격 암호문을 그대로 받아 두고, 원격이 그대로면 이 기기 암호문을 그대로 올린다
+const canonVault = d => JSON.stringify({ nodes: [...(d?.nodes || [])].sort(byId), memos: [...(d?.memos || [])].sort(byId) });
+const mergeVault = (a, b) => ({ ...a, nodes: mergeEntities(a.nodes, b.nodes), memos: mergeEntities(a.memos, b.memos) });
+const ctHash = blob => (blob ? hash(blob.ct) : '');
+async function syncVault(list) {
+  const fm = list[VMETA], fd = list[VDATA];
+  // 1. 메타
+  let rmeta = null;
+  if (fm && (!V.meta || seen[VMETA]?.rev !== fm.rev || seen[VMETA]?.id !== fm.id)) rmeta = await readJson(fm.id);
+  if (rmeta && V.meta && rmeta.vault_id !== V.meta.vault_id) { V.conflict = 'remote'; return true; }
+  if (rmeta && (!V.meta || (rmeta.updated_at || '') > (V.meta.updated_at || ''))) await Vault.adoptMeta(rmeta);
+  if (!V.meta) return true;
+  const mt = JSON.stringify(V.meta), mh = hash(mt);
+  if (!fm) { const r = await create(VMETA, mt); seen[VMETA] = { id: r.id, rev: r.headRevisionId, hash: mh }; }
+  else if (rmeta ? hash(JSON.stringify(rmeta)) !== mh : seen[VMETA]?.hash !== mh) {
+    if ((await getRev(fm.id)) !== fm.rev) return false;
+    const r = await update(fm.id, mt); seen[VMETA] = { id: r.id, rev: r.headRevisionId, hash: mh };
+  } else seen[VMETA] = { id: fm.id, rev: fm.rev, hash: mh };
+  saveSeen();
+  // 2. 문서
+  const sd = seen[VDATA] || {};
+  let rblob = null;
+  if (fd && (sd.rev !== fd.rev || sd.id !== fd.id)) rblob = await readJson(fd.id);
+  if (rblob && rblob.vault_id !== V.meta.vault_id) { V.conflict = 'remote'; return true; }
+  const put = async blob => {
+    const text = JSON.stringify(blob);
+    if (fd && (await getRev(fd.id)) !== fd.rev) return null;
+    return fd ? update(fd.id, text) : create(VDATA, text);
+  };
+  if (V.unlocked) {
+    await Vault.flush();
+    if (rblob) {
+      const rd = await Vault.decrypt(rblob);
+      const merged = mergeVault(V.doc, rd);
+      if (canonVault(merged) !== canonVault(V.doc)) await Vault.adoptDoc(merged);
+      if (canonVault(V.doc) === canonVault(rd)) { seen[VDATA] = { id: fd.id, rev: fd.rev, phash: hash(canonVault(V.doc)), bhash: ctHash(V.blob) }; saveSeen(); return true; }
+    } else {
+      const ph = hash(canonVault(V.doc));
+      const clean = fd && (sd.phash ? sd.phash === ph : sd.bhash === ctHash(V.blob));
+      if (clean) { seen[VDATA] = { ...sd, phash: ph, bhash: ctHash(V.blob) }; saveSeen(); return true; }
+      if (!fd && !V.doc.nodes.length && !V.doc.memos.length) return true;
+    }
+    await Vault.flush();
+    const r = await put(V.blob);
+    if (!r) return false;
+    seen[VDATA] = { id: r.id, rev: r.headRevisionId, phash: hash(canonVault(V.doc)), bhash: ctHash(V.blob) };
+  } else {
+    const dirty = !!V.blob && ctHash(V.blob) !== sd.bhash;
+    if (rblob) {
+      if (dirty) return true; // 이 기기에도 고친 것이 있으면 잠금을 풀었을 때 병합한다
+      await Vault.adoptBlob(rblob);
+      seen[VDATA] = { id: fd.id, rev: fd.rev, bhash: ctHash(rblob) };
+    } else if (dirty) {
+      const r = await put(V.blob);
+      if (!r) return false;
+      seen[VDATA] = { id: r.id, rev: r.headRevisionId, bhash: ctHash(V.blob) };
+    } else return true;
+  }
+  saveSeen();
   return true;
+}
+// Drive 금고로 바꾸기: 이 기기 금고를 버리고 Drive의 메타·암호문을 받는다
+export async function resolveVaultConflict() {
+  await ensureToken();
+  const list = await listFiles();
+  const meta = list[VMETA] ? await readJson(list[VMETA].id) : null;
+  if (!meta) { V.conflict = null; return; }
+  const blob = list[VDATA] ? await readJson(list[VDATA].id) : null;
+  await Vault.replaceWith(meta, blob && blob.vault_id === meta.vault_id ? blob : null);
+  delete seen[VMETA]; delete seen[VDATA]; saveSeen();
+  schedule(500);
 }
 
 export async function syncNow() {
@@ -244,7 +324,7 @@ export async function syncNow() {
     let ok = false;
     for (let i = 0; i < 3 && !ok; i++) ok = await syncOnce();
     if (!ok) throw new Error('다른 기기와 저장이 겹쳐 중단했습니다 (잠시 후 다시 시도)');
-    await dailyBackup(hooks.getCore(), hooks.getLogs()).catch(() => {});
+    await dailyBackup(hooks.getCore(), hooks.getLogs(), V.meta ? { meta: V.meta, blob: V.blob } : null).catch(() => {});
     const n = S.nowKST();
     lastSync = `${n.date} ${n.time}`;
     ls('last', lastSync);

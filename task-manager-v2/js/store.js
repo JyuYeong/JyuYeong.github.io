@@ -426,8 +426,12 @@ export async function saveLogs(ld) {
   catch { storageOk = false; }
   return storageOk;
 }
+// 보안 영역용 일반 저장 (키: vault-meta, vault, vault-device)
+export async function kvGet(key) { try { return (await tx('readonly', s => s.get(key))) ?? null; } catch { storageOk = false; return null; } }
+export async function kvPut(key, value) { try { await tx('readwrite', s => s.put(JSON.parse(JSON.stringify(value)), key)); return true; } catch { storageOk = false; return false; } }
+export async function kvDel(key) { try { await tx('readwrite', s => s.delete(key)); } catch { /* 무시 */ } }
 export async function clearAll() {
   mem = null; memLogs = null;
-  try { await tx('readwrite', s => { s.delete(LKEY); return s.delete(KEY); }); } catch { /* 무시 */ }
+  try { await tx('readwrite', s => { for (const k of [LKEY, 'vault-meta', 'vault', 'vault-device']) s.delete(k); return s.delete(KEY); }); } catch { /* 무시 */ }
 }
 export { stamp, live };

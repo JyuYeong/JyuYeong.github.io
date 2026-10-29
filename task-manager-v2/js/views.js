@@ -5,6 +5,7 @@ import { st, liveTasks, taskById, STATUS_LABEL } from './state.js';
 import { $, esc, ic, stIcon } from './util.js';
 import { renderMd } from './md.js';
 import { dayLabel } from './logs.js';
+import { vaultPageHtml, vaultLabelSection } from './vaultui.js';
 
 const doc = () => st.doc;
 const BUCKETS = [['all', '전체'], ['todo', '대기'], ['in_progress', '진행 중'], ['delayed', '지연 중'], ['done', '완료'], ['canceled', '취소']];
@@ -115,6 +116,7 @@ function labelHtml(id) {
     ${statChips(c, 'label:' + id)}
     ${l ? `<section class="pgs"><h3>주제 <span class="n">${topics.filter(g => !g.archived).length}</span></h3>${topicRows || '<p class="hint">주제가 없습니다. 라벨·주제 관리에서 추가할 수 있습니다.</p>'}</section>` : ''}
     <section class="pgs"><h3>${l ? '주제 없는 Task' : 'Task'} <span class="n">${loose.length}</span></h3>${loose.length ? `<div class="trows">${loose.map(t => taskRow(t, now, { showLabels: false })).join('')}</div>` : '<p class="hint">없습니다.</p>'}</section>
+    ${l ? vaultLabelSection(l.id) : ''}
     <section class="pgs"><h3>최근 이력</h3>${logsFeed(tasks, 15)}</section>`;
 }
 
@@ -142,7 +144,7 @@ export function renderPage() {
   $('#page').hidden = isList;
   document.querySelector('.app').dataset.page = p.kind;
   if (isList) return;
-  const html = p.kind === 'dash' ? dashHtml() : p.kind === 'label' ? labelHtml(p.id) : topicHtml(p.id);
+  const html = p.kind === 'dash' ? dashHtml() : p.kind === 'label' ? labelHtml(p.id) : p.kind === 'vault' ? vaultPageHtml() : topicHtml(p.id);
   const el = $('#page');
   const keep = el.dataset.key === p.kind + (p.id || '') ? el.scrollTop : 0;
   el.innerHTML = html;

@@ -692,3 +692,95 @@ button.kpi:not(:disabled):hover,a.kpi:hover{background:var(--hover)}
 .dtbl .ln{max-width:100%}
 .dtbl .gr th .ln{display:flex}
 .dtbl .lc .ln{flex:1 1 auto;max-width:calc(100% - 26px)}
+
+/* ======================================================================
+   v2 (V5): 보안 영역
+   ====================================================================== */
+.mono,.in.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+textarea.in.mono{height:auto;padding:8px 10px;font-size:13.5px;line-height:1.45;resize:vertical}
+.ck{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--ink2);min-height:36px}
+.ck input{width:18px;height:18px;accent-color:var(--accent)}
+.lnk{font-size:13px}
+/* 잠금 화면 */
+.gate{display:flex;flex-direction:column;gap:8px;max-width:420px;width:100%;margin:8px auto 0;padding:18px 18px 20px;background:var(--surface);border:1px solid var(--line);border-radius:16px}
+.gate h3{display:flex;align-items:center;gap:8px;margin:0 0 4px;font-size:16px}
+.gate h3 .ic{color:var(--accent-ink)}
+.gate p{margin:0;font-size:13.5px;color:var(--ink2);line-height:1.5}
+.gate .fl{margin:6px 0 0}
+.gate .btn.primary{margin-top:8px}
+.in.pin{letter-spacing:.5em;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:20px;text-align:center;max-width:180px}
+.gmsg{color:var(--danger)!important;font-weight:600}
+.glinks{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:4px}
+.glinks .lnk{color:var(--accent-ink)}
+.rkey{padding:12px;border:1px dashed var(--line2);border-radius:10px;font:600 16px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.04em;text-align:center;word-break:break-all;user-select:all;background:var(--soft)}
+.gate .btn.sm{align-self:flex-start}
+/* 본문 */
+.vtabs{flex:none}
+.vtabs .n{font-size:11.5px;opacity:.8}
+#vQ{flex:none}
+.vbody{gap:4px}
+.vbar{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.vbar .sp{flex:1}
+/* 트리 (밀도 높게) */
+.vtree{display:flex;flex-direction:column}
+.tr{display:flex;align-items:center;gap:4px;min-height:34px;padding:1px 2px;border-radius:6px;font-size:13.5px}
+.tr:hover{background:var(--hover)}
+.tr.hl{box-shadow:inset 0 0 0 1.5px var(--accent);background:var(--accent-weak)}
+.tr .ind{width:16px;flex:none;align-self:stretch;border-left:1px solid var(--line);margin-left:8px}
+.tr .tt{display:flex;align-items:center;gap:4px;min-width:0;height:30px;border:0;background:none;padding:0 4px 0 0;font-size:13.5px;color:var(--ink);text-align:left}
+.tr .tt:disabled{cursor:default;color:var(--ink)}
+.tr .tt:disabled .car{opacity:.25}
+.tr .car{width:15px;height:15px;color:var(--muted)}
+.tr .tfi{width:16px;height:16px;color:var(--accent-ink)}
+.tr .tn{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tr .tc{font-size:11px;color:var(--muted);margin-left:4px;white-space:nowrap}
+.tr .icbtn.xs{flex:none}
+.tr.tf .icbtn.xs{margin-left:auto}
+.tr .tsp{width:19px;flex:none}
+.tr .tk{flex:none;max-width:40%;display:inline-flex;align-items:center;gap:3px;font:600 12.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tr .kl{width:12px;height:12px;color:var(--muted)}
+.tr .tsep{color:var(--muted);flex:none}
+.tv{flex:1;min-width:0;font:13px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;user-select:text}
+.tv.multi{white-space:pre-wrap;overflow-wrap:anywhere}
+.tv.none{color:var(--muted);font-family:inherit;font-size:12px}
+button.tv{border:0;background:none;padding:0;text-align:left;cursor:pointer}
+.tv.tm{letter-spacing:.15em;color:var(--muted)}
+.tv.tm:hover{color:var(--accent-ink)}
+.tv.tmore small{color:var(--muted)}
+.tr.tfld .icbtn.xs:last-child{margin-left:2px}
+.vlbs{display:inline-flex;flex-wrap:wrap;gap:4px;min-width:0;overflow:hidden}
+.vlb{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 6px;border-radius:5px;font-size:11px;font-weight:600;white-space:nowrap;background:var(--soft);color:var(--ink2)}
+.vlb .dot{width:7px;height:7px}
+.vlb.inh{opacity:.55;font-weight:500}
+.vpath{margin:4px 0 0;font-size:11.5px;color:var(--muted)}
+/* 보안메모 */
+.vmemo{border-top:1px solid var(--line);padding:2px 0}
+.vmemo:first-of-type{border-top:0}
+.vmemo.hl{background:var(--accent-weak);border-radius:6px}
+.vmh{display:flex;align-items:center;gap:6px;min-height:36px}
+.vmh .tt{display:flex;align-items:center;gap:4px;min-width:0;height:32px;border:0;background:none;padding:0;font-size:14px;text-align:left}
+.vmh .car{width:15px;height:15px;color:var(--muted)}
+.vmh .tfi{width:15px;height:15px;color:var(--accent-ink)}
+.vmh .tn{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vmh .icbtn{margin-left:auto}
+.vmb{margin:0 0 6px 20px;padding:8px 10px;border-left:2px solid var(--line);white-space:pre-wrap;overflow-wrap:anywhere;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;user-select:text}
+/* 검색 결과 */
+.vsrs{display:flex;flex-direction:column}
+.vsr{display:flex;align-items:center;gap:6px;min-height:38px;padding:4px 6px;border:0;border-top:1px solid var(--line);background:none;text-align:left;font-size:13.5px;flex-wrap:wrap}
+.vsr:first-child{border-top:0}
+.vsr:hover{background:var(--hover)}
+.vsr .ic{width:15px;height:15px;color:var(--muted)}
+.vsr .p{font-size:12px;color:var(--muted)}
+.vsr .v{font:12.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:50%}
+/* 다이얼로그 */
+.vform{display:flex;flex-direction:column;gap:8px}
+.vform .fl{margin:4px 0 0}
+.treebox{display:flex;flex-direction:column;max-height:50dvh;overflow-y:auto;border:1px solid var(--line);border-radius:10px;padding:4px}
+.treebox .mi .ic{width:16px;height:16px;color:var(--muted)}
+.btn.danger.armed{background:var(--u-urgent-bg)}
+@media (max-width:699px){
+  dialog[data-kind^="v"]{margin:auto 0 0;width:100%;max-width:none;border-radius:20px 20px 0 0;max-height:94dvh}
+}
+.top h1{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sync{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40vw}
+@media (max-width:420px){.top h1{font-size:17px}.top h1 .ver{display:none}.top .icbtn{width:40px}}

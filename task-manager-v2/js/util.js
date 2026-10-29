@@ -26,6 +26,12 @@ const P = {
   up: '<path d="M7 14l5-5 5 5"/>',
   down: '<path d="M7 10l5 5 5-5"/>',
   dash: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="4" rx="1.5"/><rect x="13" y="10" width="7" height="10" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
+  eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+  eyeOff: '<path d="M4 4l16 16"/><path d="M9.9 5.8A9.7 9.7 0 0112 5.5c6 0 9.5 6.5 9.5 6.5a16 16 0 01-3 3.8M6.3 7.5A15.6 15.6 0 002.5 12S6 18.5 12 18.5a9.5 9.5 0 004.2-.9"/>',
+  key: '<circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M14 9l2 2"/>',
+  folder: '<path d="M4 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2z"/>',
+  lock: '<rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V8a4 4 0 018 0v2.5"/>',
   dots: '<circle cx="6" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18" cy="12" r="1.3"/>',
   note: '<path d="M6 4h9l3 3v13H6z"/><path d="M9 10h6M9 14h6M9 18h3"/>',
 };
@@ -77,11 +83,17 @@ dlg.addEventListener('close', () => { dlg.dataset.kind = ''; });
 // items: [{ label, sub, icon, cur, add, head, check, note, onPick }] 또는 그것을 돌려주는 함수
 // onPick이 'keep'을 돌려주면 메뉴를 닫지 않고 다시 그린다 (여러 개 고르기)
 let closeMenuFn = () => {};
+let menuOpen = false;
+// 다이얼로그 안 메뉴가 열려 있을 때 Esc는 메뉴만 닫는다
+dlg.addEventListener('cancel', e => { if (menuOpen) { e.preventDefault(); closeMenu(); } });
 export const closeMenu = () => closeMenuFn();
 export function openMenu(anchor, items) {
   closeMenu();
   const getItems = typeof items === 'function' ? items : () => items;
-  const root = $('#menuRoot');
+  // 모달 다이얼로그 안에서 열 때는 다이얼로그 안에 그린다 (밖에 그리면 다이얼로그 뒤에 가려 누를 수 없다)
+  const host = anchor.closest('dialog[open]');
+  let root = $('#menuRoot');
+  if (host) { root = host.querySelector(':scope > .menuRootDlg') || host.appendChild(Object.assign(document.createElement('div'), { className: 'menuRootDlg' })); }
   let list = getItems();
   const draw = () => {
     root.innerHTML = `<div class="pop" role="menu">${list.map((it, i) => it.head
@@ -102,7 +114,7 @@ export function openMenu(anchor, items) {
   };
   place();
   const onDown = e => { if (!root.contains(e.target)) closeMenu(); };
-  const onKey = e => { if (e.key === 'Escape') { closeMenu(); anchor.focus(); } };
+  const onKey = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeMenu(); anchor.focus(); } };
   root.onclick = e => {
     const b = e.target.closest('.mi');
     if (!b || b.disabled) return;
@@ -115,12 +127,14 @@ export function openMenu(anchor, items) {
     } else closeMenu();
   };
   setTimeout(() => document.addEventListener('pointerdown', onDown), 0);
-  document.addEventListener('keydown', onKey);
+  document.addEventListener('keydown', onKey, true);
   addEventListener('resize', closeMenu, { once: true });
+  menuOpen = true;
   closeMenuFn = () => {
     document.removeEventListener('pointerdown', onDown);
-    document.removeEventListener('keydown', onKey);
+    document.removeEventListener('keydown', onKey, true);
     root.innerHTML = ''; root.onclick = null;
+    menuOpen = false;
     closeMenuFn = () => {};
   };
   pop.querySelector('.mi.cur, .mi')?.focus();

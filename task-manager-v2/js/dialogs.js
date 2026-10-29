@@ -5,7 +5,7 @@ import { esc, ic, openDlg, dlgIs, setDlgBody } from './util.js';
 import { visibleTasks, byCreated } from './render.js';
 import * as Sync from './sync.js';
 
-export const APP_VERSION = 'v2 · V4';
+export const APP_VERSION = 'v2 · V5';
 const doc = () => st.doc;
 const live = arr => arr.filter(x => !x.deleted_at);
 const seg = (field, options, cur) => `<div class="seg xs" role="group">${options.map(([v, l]) => `<button type="button" data-act="set-${field}" data-v="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div>`;

@@ -1,6 +1,8 @@
 // 시작과 사용자 동작 처리
 import * as S from './store.js';
 import * as Sync from './sync.js';
+import * as Vault from './vault.js';
+import { initVaultUi } from './vaultui.js';
 import { st, DEFAULT_Q, DEFAULT_TIME, STATUS_LABEL, loadPrefs, savePrefs, persist, persistLogs, liveTasks, taskById, selTask, onSaved } from './state.js';
 import { $, esc, ic, stIcon, wide, toast, dlg, openDlg, dlgIs, setDlgBody, openMenu, armed, copyText, download } from './util.js';
 import { renderList, renderSide, renderPanel, renderTicker, renderAll, touch, refreshPanelValues, growArea, fitMemos, visibleTasks, tsFootHtml } from './render.js';
@@ -24,6 +26,7 @@ function renderSyncLabel() {
   el.className = 'sync ' + cls;
   el.title = stt.detail || '';
   if (dlgIs('settings') && !dlg.contains(document.activeElement?.closest('input') || null)) setDlgBody(settingsHtml());
+  if (st.ui.page.kind === 'vault' && !Vault.V.unlocked && !$('#page')?.contains(document.activeElement)) renderList();
 }
 onSaved(() => { renderSyncLabel(); Sync.schedule(); });
 
@@ -551,6 +554,13 @@ new ResizeObserver(es => {
 (async function init() {
   st.doc = await S.load();
   st.logs = await S.loadLogs();
+  await Vault.loadVault();
+  initVaultUi({ render: () => { renderList(); renderSide(); }, syncInfo: () => ({ ...Sync.getState(), resolveConflict: Sync.resolveVaultConflict }) });
+  Vault.onVaultChange(what => {
+    if (what === 'saved' || what === 'meta') Sync.schedule(1500);
+    if (what === 'unlock') Sync.schedule(300); // 잠긴 동안 미뤄 둔 병합을 바로 처리
+    if (what !== 'saved' && ['vault', 'label'].includes(st.ui.page.kind)) { renderList(); renderSide(); }
+  });
   loadPrefs();
   renderAll();
   Sync.init({ getCore: () => st.doc, getLogs: () => st.logs, apply: applyMerged, onStatus: renderSyncLabel });

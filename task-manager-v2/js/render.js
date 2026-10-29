@@ -286,6 +286,7 @@ export function renderSide() {
     + `<button class="vh" data-act="toggle-views" aria-expanded="${st.ui.viewsOpen}">${ic('chev')}저장된 뷰</button>`
     + (st.ui.viewsOpen ? (views.map(v => `<button class="nav vh-item" data-act="apply-view" data-id="${v.id}" title="${esc(v.name)}"><span class="lbl">${esc(v.name)}</span></button>`).join('') || '<span class="hint" style="margin:0 10px">저장된 뷰 없음</span>') : '')
     + `<span class="sp"></span>`
+    + `<button class="nav" data-act="v-open" aria-pressed="${st.ui.page.kind === 'vault'}" title="보안 영역">${ic('lock')}<span class="lbl">보안 영역</span></button>`
     + `<button class="nav" data-act="ticker" title="티커">${ic('bell')}<span class="lbl">티커</span></button>`
     + `<button class="nav" data-act="labels" title="라벨·주제 관리">${ic('label')}<span class="lbl">라벨·주제 관리</span></button>`
     + `<button class="nav" data-act="settings" title="설정">${ic('gear')}<span class="lbl">설정</span></button>`;
