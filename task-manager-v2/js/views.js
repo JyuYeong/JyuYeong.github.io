@@ -44,7 +44,8 @@ function logsFeed(tasks, limit) {
   for (const l of logs.slice(0, limit)) {
     if (l.work_date !== cur) { cur = l.work_date; html += `<div class="tld"><span>${dayLabel(cur)}</span></div>`; }
     const ts = l.task_ids.map(taskById).filter(Boolean);
-    html += `<article class="tle"><div class="tlm lk2">${ts.map(t => `<button type="button" data-act="open" data-id="${t.id}" title="${esc(t.title)}">${esc(t.title)}</button>`).join('')}</div><div class="md">${renderMd(l.body)}</div></article>`;
+    const ev = S.logKind(l) === 'event';
+    html += `<article class="tle${ev ? ' ev' : ''}"><div class="tlm lk2">${ev ? '<span class="kb ev">발생</span>' : ''}${ts.map(t => `<button type="button" data-act="open" data-id="${t.id}" title="${esc(t.title)}">${esc(t.title)}</button>`).join('')}</div><div class="md">${renderMd(l.body)}</div></article>`;
   }
   return `<div class="tl">${html}</div>${logs.length > limit ? `<p class="hint">최근 ${limit}건만 표시 (전체 ${logs.length}건)</p>` : ''}`;
 }
@@ -57,7 +58,8 @@ function dashHtml() {
   const all = liveTasks();
   const total = S.statusCounts(all, now);
   const week = S.addDays(now.date, -6);
-  const logs7 = st.logs.logs.filter(l => !l.deleted_at && l.work_date >= week).length;
+  const recent = st.logs.logs.filter(l => !l.deleted_at && l.work_date >= week);
+  const logs7 = recent.filter(l => S.logKind(l) === 'work').length, ev7 = recent.length - logs7;
   const stale = all.filter(t => !S.isFin(t) && t.status === 'in_progress')
     .map(t => ({ t, last: S.lastActivity(t) || S.kstDateOf(t.created_at) }))
     .filter(x => S.dayDiff(x.last, now.date) >= STALE_DAYS)
@@ -77,7 +79,7 @@ function dashHtml() {
     <button type="button" class="kpi" data-act="go-list" data-scope="all" data-st="in_progress"><b>${total.in_progress}</b>진행 중</button>
     <button type="button" class="kpi warn" data-act="go-list" data-scope="all" data-st="delayed"${total.delayed ? '' : ' disabled'}><b>${total.delayed}</b>지연 중</button>
     <a class="kpi${stale.length ? ' warn' : ''}" href="#stale"><b>${stale.length}</b>${STALE_DAYS}일+ 손 안 댐</a>
-    <div class="kpi"><b>${logs7}</b>최근 7일 이력</div>
+    <div class="kpi"><b>${logs7}</b>최근 7일 작업${ev7 ? ` · 발생 ${ev7}` : ''}</div>
   </div>
   <section class="pgs"><h3>라벨별 현황</h3>
     ${labels.length || none.length ? `<div class="tblw"><table class="dtbl"><thead><tr><th scope="col">라벨</th>${BUCKETS.map(([, l]) => `<th scope="col">${l}</th>`).join('')}</tr></thead>

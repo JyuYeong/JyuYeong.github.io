@@ -319,26 +319,33 @@ export function tickerState(k, now = nowKST()) {
 export const LOG_SCHEMA = 'tm2-logs';
 export const LOG_SOFT_LIMIT = 2000;
 export const emptyLogs = () => ({ schema: LOG_SCHEMA, version: VERSION, updated_at: nowIso(), logs: [] });
-let logIdx = new Map(); // taskId → Map(작업일 → 개수)
+// 이력 종류: 'work'(내가 한 작업, 기본) | 'event'(그 Task와 관련해 일어난 일). 날짜별 체크·손댄 날은 작업만 반영
+export const LOG_KINDS = { work: '작업', event: '발생' };
+export const logKind = l => (l?.kind === 'event' ? 'event' : 'work');
+let logIdx = new Map(); // taskId → Map(작업일 → 개수) — 작업만
+let evIdx = new Map(); // taskId → Map(발생일 → 개수) — 발생만
 export function indexLogs(ld) {
-  logIdx = new Map();
+  logIdx = new Map(); evIdx = new Map();
   for (const l of ld.logs) {
     if (l.deleted_at) continue;
+    const idx = logKind(l) === 'event' ? evIdx : logIdx;
     for (const tid of l.task_ids) {
-      if (!logIdx.has(tid)) logIdx.set(tid, new Map());
-      const m = logIdx.get(tid);
+      if (!idx.has(tid)) idx.set(tid, new Map());
+      const m = idx.get(tid);
       m.set(l.work_date, (m.get(l.work_date) || 0) + 1);
     }
   }
 }
+export const hasEventOn = (t, date) => !!evIdx.get(t.id)?.has(date);
 export const compareLogs = (a, b) => (a.work_date !== b.work_date ? (a.work_date < b.work_date ? 1 : -1) : a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0);
 export const logById = (ld, id) => ld.logs.find(l => l.id === id && !l.deleted_at) || null;
 export const logsOfTask = (ld, taskId) => ld.logs.filter(l => !l.deleted_at && l.task_ids.includes(taskId)).sort(compareLogs);
-export const logCount = taskId => { let n = 0; logIdx.get(taskId)?.forEach(c => { n += c; }); return n; };
-export const lastLogDate = taskId => { let d = ''; logIdx.get(taskId)?.forEach((_, k) => { if (k > d) d = k; }); return d; };
-export function createLog(ld, { task_ids, work_date, body }) {
+// 카드 요약용: 작업·발생 모두 센다
+export const logCount = taskId => { let n = 0; for (const idx of [logIdx, evIdx]) idx.get(taskId)?.forEach(c => { n += c; }); return n; };
+export const lastLogDate = taskId => { let d = ''; for (const idx of [logIdx, evIdx]) idx.get(taskId)?.forEach((_, k) => { if (k > d) d = k; }); return d; };
+export function createLog(ld, { task_ids, work_date, body, kind = 'work' }) {
   const ts = nowIso();
-  const l = { id: uniqueId('L-', ld.logs), task_ids: [...new Set(task_ids)], work_date, body: String(body || ''), created_at: ts, updated_at: ts, deleted_at: null };
+  const l = { id: uniqueId('L-', ld.logs), kind: kind === 'event' ? 'event' : 'work', task_ids: [...new Set(task_ids)], work_date, body: String(body || ''), created_at: ts, updated_at: ts, deleted_at: null };
   ld.logs.push(l);
   indexLogs(ld);
   return l;

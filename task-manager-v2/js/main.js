@@ -6,7 +6,7 @@ import { initVaultUi } from './vaultui.js';
 import { st, DEFAULT_Q, DEFAULT_TIME, STATUS_LABEL, loadPrefs, savePrefs, persist, persistLogs, liveTasks, taskById, selTask, onSaved } from './state.js';
 import { $, esc, ic, stIcon, wide, toast, dlg, openDlg, dlgIs, setDlgBody, openMenu, armed, copyText, download } from './util.js';
 import { renderList, renderSide, renderPanel, renderTicker, renderAll, touch, refreshPanelValues, growArea, fitMemos, visibleTasks, tsFootHtml } from './render.js';
-import { openComposer, composer, refreshLinked, refreshSuggest, refreshDateNote, refreshCount, mdFormat, togglePreview, scrollToLog } from './logs.js';
+import { openComposer, composer, setKind, tl, refreshLinked, refreshSuggest, refreshDateNote, refreshCount, mdFormat, togglePreview, scrollToLog } from './logs.js';
 import { dashOpen } from './views.js';
 import { labelsHtml, refreshLabelsDlg, openLabels, openTopicsOf, newLabelDialog, newTopicDialog, filterHtml, settingsHtml, tickerHtml, TK_STATE } from './dialogs.js';
 
@@ -363,6 +363,8 @@ document.addEventListener('click', async e => {
     case 'lg-unlink': if (composer.taskIds.length > 1) { composer.taskIds = composer.taskIds.filter(x => x !== id); refreshLinked(); } break;
     case 'md-h': case 'md-b': case 'md-li': case 'md-cb': case 'md-code': mdFormat(act.slice(3)); break;
     case 'md-preview': togglePreview(el); break;
+    case 'lg-kind': setKind(el.dataset.v); break;
+    case 'tl-filter': tl.filter = el.dataset.v; renderPanel('[data-act="tl-filter"][aria-pressed="true"]'); break;
     case 'sync-click': if (Sync.getState().signedIn) Sync.syncNow(); else openDlg('settings', '설정', settingsHtml()); break;
     case 'sign-in': Sync.signIn(); break;
     case 'sign-out': if (armed(el, '한 번 더 누르면 동기화 중지')) { Sync.signOut(); toast('동기화를 중지했습니다. 이 기기의 데이터는 그대로 남아 있습니다.'); } break;
@@ -460,10 +462,11 @@ function saveLog(f) {
   const ids = composer.taskIds.filter(id => taskById(id));
   if (!ids.length) { toast('연결할 Task가 없습니다'); return; }
   let l = composer.editId ? S.logById(st.logs, composer.editId) : null;
-  if (l) S.updateLog(st.logs, l, { body, work_date: date, task_ids: ids });
-  else l = S.createLog(st.logs, { task_ids: ids, work_date: date, body });
-  // 대기 중인 Task에 처음 이력을 남기면 진행 중으로
-  const moved = ids.map(taskById).filter(t => t.status === 'todo');
+  const kind = composer.kind;
+  if (l) S.updateLog(st.logs, l, { body, work_date: date, task_ids: ids, kind });
+  else l = S.createLog(st.logs, { task_ids: ids, work_date: date, body, kind });
+  // 대기 중인 Task에 처음 "작업" 이력을 남기면 진행 중으로 ("발생"은 상태를 바꾸지 않음)
+  const moved = kind === 'work' ? ids.map(taskById).filter(t => t.status === 'todo') : [];
   moved.forEach(t => { t.status = 'in_progress'; t.completed_at = null; t.updated_at = now(); });
   if (moved.length) persist();
   persistLogs();

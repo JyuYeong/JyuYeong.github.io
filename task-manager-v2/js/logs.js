@@ -13,10 +13,16 @@ export const dayLabel = d => {
 };
 
 // ---------- 타임라인 ----------
+// 타임라인 걸러 보기 (이 기기, 이번 세션만): 'all' | 'work' | 'event'
+export const tl = { filter: 'all' };
 export function timelineHtml(t) {
-  const logs = S.logsOfTask(st.logs, t.id);
-  const head = `<div class="shrow"><span class="sh0">작업 이력${logs.length ? ` <span class="n">${logs.length}</span>` : ''}</span><button type="button" class="btn xs" data-act="log-new">${ic('plus')}이력 추가</button></div>`;
-  if (!logs.length) return `${head}<p class="hint">아직 이력이 없습니다. 오늘 한 일을 짧게 남기면 날짜별 체크에도 표시됩니다.</p>`;
+  const all = S.logsOfTask(st.logs, t.id);
+  const nEv = all.filter(l => S.logKind(l) === 'event').length;
+  const logs = tl.filter === 'all' ? all : all.filter(l => S.logKind(l) === tl.filter);
+  const seg = nEv ? `<div class="seg xs tlf" role="group" aria-label="이력 걸러 보기">${[['all', '전체'], ['work', `작업 ${all.length - nEv}`], ['event', `발생 ${nEv}`]].map(([v, l]) => `<button type="button" data-act="tl-filter" data-v="${v}" aria-pressed="${tl.filter === v}">${l}</button>`).join('')}</div>` : '';
+  const head = `<div class="shrow"><span class="sh0">작업 이력${all.length ? ` <span class="n">${all.length}</span>` : ''}</span><button type="button" class="btn xs" data-act="log-new">${ic('plus')}이력 추가</button></div>${seg}`;
+  if (!all.length) return `${head}<p class="hint">아직 이력이 없습니다. 내가 한 일은 "작업", 이 Task와 관련해 일어난 일(장애 발생, 고객 요청 등)은 "발생"으로 남기세요. 작업만 날짜별 체크에 표시됩니다.</p>`;
+  if (!logs.length) return `${head}<p class="hint">해당하는 이력이 없습니다.</p>`;
   let html = '', cur = '';
   for (const l of logs) {
     if (l.work_date !== cur) {
@@ -27,8 +33,9 @@ export function timelineHtml(t) {
     const others = l.task_ids.filter(id => id !== t.id).map(taskById).filter(Boolean);
     const link = others.length ? `<span class="lk">${ic('link')}${others.slice(0, 2).map(o => `<button type="button" data-act="open" data-id="${o.id}" title="${esc(o.title)} (${o.id})">${esc(o.title)}</button>`).join('')}${others.length > 2 ? `<span class="more">+${others.length - 2}</span>` : ''}</span>` : '';
     const edited = l.updated_at && l.created_at && (new Date(l.updated_at) - new Date(l.created_at) > 60000) ? ' · 수정됨' : '';
-    html += `<article class="tle" id="log-${l.id}">
-      <div class="tlm"><time title="작성 ${esc(l.created_at)}">${hm(l.created_at)}${edited}</time>${link}<button type="button" class="icbtn xs" data-act="log-menu" data-id="${l.id}" aria-label="이력 메뉴" aria-haspopup="menu">${ic('dots')}</button></div>
+    const ev = S.logKind(l) === 'event';
+    html += `<article class="tle${ev ? ' ev' : ''}" id="log-${l.id}">
+      <div class="tlm">${ev ? '<span class="kb ev">발생</span>' : ''}<time title="작성 ${esc(l.created_at)}">${hm(l.created_at)}${edited}</time>${link}<button type="button" class="icbtn xs" data-act="log-menu" data-id="${l.id}" aria-label="이력 메뉴" aria-haspopup="menu">${ic('dots')}</button></div>
       <div class="md">${renderMd(l.body)}</div></article>`;
   }
   return `${head}<div class="tl">${html}</div>`;
@@ -46,7 +53,7 @@ export function scrollToLog({ date, id }) {
 }
 
 // ---------- 입력·수정 시트 ----------
-export const composer = { editId: null, taskIds: [], preview: false, query: '' };
+export const composer = { editId: null, taskIds: [], preview: false, query: '', kind: 'work' };
 
 function linkedChipsHtml() {
   return composer.taskIds.map(taskById).filter(Boolean).map(t => `<span class="lkc">${stIcon(S.displayStatus(t))}<span class="t">${esc(t.title)}</span>${composer.taskIds.length > 1 ? `<button type="button" data-act="lg-unlink" data-id="${t.id}" aria-label="${esc(t.title)} 연결 해제">${ic('x')}</button>` : ''}</span>`).join('');
@@ -68,7 +75,7 @@ export function refreshDateNote() {
   if (!inp || !note) return;
   const d = inp.value;
   const late = composer.taskIds.map(taskById).filter(t => t && t.due_date && d > t.due_date);
-  note.textContent = late.length ? `마감 이후 작업입니다 (${late.map(t => `${t.title} +${S.dayDiff(t.due_date, d)}일`).join(', ')})` : '';
+  note.textContent = late.length ? `마감 이후 ${composer.kind === 'event' ? '발생' : '작업'}입니다 (${late.map(t => `${t.title} +${S.dayDiff(t.due_date, d)}일`).join(', ')})` : '';
 }
 export function refreshCount() {
   const ta = $('#lgBody'), c = $('#lgCount');
@@ -85,9 +92,11 @@ export function openComposer(taskId, editId = null) {
   composer.taskIds = l ? l.task_ids.filter(id => taskById(id)) : [taskId];
   composer.preview = false;
   composer.query = '';
+  composer.kind = l ? S.logKind(l) : 'work';
   const today = S.todayKST();
   openDlg('log', l ? '이력 수정' : '이력 추가', `<form id="logForm" autocomplete="off">
-    <div class="lgrow"><label class="fl" for="lgDate">작업일</label><input class="in xs" type="date" id="lgDate" name="work_date" max="${today}" value="${l ? l.work_date : today}" required><span class="lgnote" id="lgDateNote"></span></div>
+    <div class="seg xs lgkind" role="group" aria-label="이력 종류">${Object.entries(S.LOG_KINDS).map(([v, lb]) => `<button type="button" data-act="lg-kind" data-v="${v}" aria-pressed="${composer.kind === v}">${v === 'work' ? '작업 · 내가 한 일' : '발생 · 일어난 일'}</button>`).join('')}</div>
+    <div class="lgrow"><label class="fl" for="lgDate" id="lgDateLbl">${composer.kind === 'event' ? '발생일' : '작업일'}</label><input class="in xs" type="date" id="lgDate" name="work_date" max="${today}" value="${l ? l.work_date : today}" required><span class="lgnote" id="lgDateNote"></span></div>
     <div class="fsec"><span class="fl">연결 Task</span><div class="lktasks" id="lgLinked">${linkedChipsHtml()}</div>
       <input class="in xs" type="search" id="lgSearch" placeholder="다른 Task도 연결 (제목·ID 검색)" aria-label="연결할 Task 검색"><div class="lgsug" id="lgSug"></div></div>
     <div class="mdbar" role="toolbar" aria-label="서식">
@@ -98,7 +107,7 @@ export function openComposer(taskId, editId = null) {
     <p class="hint">이력은 암호화되지 않습니다. 계정·고객사 네트워크 상세 같은 민감 정보는 넣지 마세요. <span class="cnt2" id="lgCount">0자</span></p>
     <div class="btns"><button type="button" class="btn" data-act="close-dlg">취소</button><button type="submit" class="btn primary">${l ? '저장' : '추가'}</button></div>
   </form>`);
-  refreshDateNote(); refreshCount();
+  setKind(composer.kind); refreshCount();
   const ta = $('#lgBody');
   ta.focus();
   ta.setSelectionRange(ta.value.length, ta.value.length);
@@ -131,6 +140,13 @@ export function mdFormat(kind) {
   ta.focus();
   ta.setSelectionRange(ca, cb);
   refreshCount();
+}
+export function setKind(v) {
+  composer.kind = v === 'event' ? 'event' : 'work';
+  document.querySelectorAll('[data-act="lg-kind"]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === composer.kind)));
+  const lbl = $('#lgDateLbl'); if (lbl) lbl.textContent = composer.kind === 'event' ? '발생일' : '작업일';
+  $('#logForm')?.classList.toggle('ev', composer.kind === 'event');
+  refreshDateNote();
 }
 export function togglePreview(btn) {
   composer.preview = !composer.preview;

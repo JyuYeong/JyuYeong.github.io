@@ -784,3 +784,22 @@ button.tv{border:0;background:none;padding:0;text-align:left;cursor:pointer}
 .top h1{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sync{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:40vw}
 @media (max-width:420px){.top h1{font-size:17px}.top h1 .ver{display:none}.top .icbtn{width:40px}}
+
+/* ======================================================================
+   이력 종류: 작업 / 발생
+   ====================================================================== */
+:root{--ev:#D9822B;--ev-bg:#FFF1DE}
+@media (prefers-color-scheme:dark){:root{--ev:#F0A04B;--ev-bg:#3A2A14}}
+.tle.ev{border-left-color:var(--ev)}
+.kb{display:inline-flex;align-items:center;height:18px;padding:0 6px;border-radius:5px;font-size:11px;font-weight:700;flex:none}
+.kb.ev{background:var(--ev-bg);color:var(--ev)}
+.tlf{margin:-2px 0 2px}
+.tlf button{height:28px;font-size:12px}
+.lgkind button{font-size:12.5px}
+#logForm.ev .lgkind button[aria-pressed="true"]{background:var(--ev);color:#fff}
+#logForm.ev .mdin{border-color:var(--ev)}
+/* 날짜별 체크: 발생이 있었던 날은 점 위에 주황 점 */
+.dc{position:relative}
+.dc.ev::after{content:"";position:absolute;top:-4px;left:50%;margin-left:3px;width:6px;height:6px;border-radius:50%;background:var(--ev);box-shadow:0 0 0 1.5px var(--surface)}
+.cd{position:relative}
+.cd.ev::after{content:"";position:absolute;top:4px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--ev)}

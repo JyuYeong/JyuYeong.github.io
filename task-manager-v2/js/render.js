@@ -174,10 +174,11 @@ export function dayStripHtml(t, now) {
   const can = !S.isFin(t);
   const cell = d => {
     const w = S.isWorked(t, d);
-    const cls = `dc${w ? ' on' : ''}${S.isOver(t, d) ? ' over' : ''}${d === today ? ' today' : d > today ? ' fut' : ''}`;
+    const ev = S.hasEventOn(t, d);
+    const cls = `dc${w ? ' on' : ''}${ev ? ' ev' : ''}${S.isOver(t, d) ? ' over' : ''}${d === today ? ' today' : d > today ? ' fut' : ''}`;
     const inner = `<i></i><b>${+d.slice(8)}</b>`;
     if (d === today && can) return `<button type="button" class="${cls}" data-act="dc-today" data-id="${t.id}" aria-pressed="${w}" aria-label="오늘(${md(d)}) 손댄 날로 ${w ? '표시됨, 해제하려면 선택' : '표시'}" title="오늘 손댄 날로 표시/해제">${inner}</button>`;
-    return `<span class="${cls}" title="${md(d)} ${w ? '손댐' : d > today ? '' : '안 함'}${S.isOver(t, d) ? ' (마감 초과)' : ''}">${inner}</span>`;
+    return `<span class="${cls}" title="${md(d)} ${w ? '손댐' : d > today ? '' : '안 함'}${ev ? ' · 발생 있음' : ''}${S.isOver(t, d) ? ' (마감 초과)' : ''}">${inner}</span>`;
   };
   const sm = S.dayCheckSummary(t, today);
   return `<div class="dstrip" aria-label="날짜별 체크: ${esc(sm.text)}">${cutL ? '<span class="dcut" aria-hidden="true">…</span>' : ''}${days.map(cell).join('')}${cutR ? '<span class="dcut" aria-hidden="true">…</span>' : ''}<span class="dsum${sm.warn ? ' warn' : ''}">${esc(sm.text)}</span></div>`;
@@ -193,11 +194,11 @@ function dayCalHtml(t, now) {
   const cells = days.map((d, i) => {
     const w = S.isWorked(t, d);
     const label = (i === 0 || d.endsWith('-01')) ? `${+d.slice(5, 7)}/${+d.slice(8)}` : `${+d.slice(8)}`;
-    const lg = S.hasLogOn(t, d);
-    return `<button type="button" class="cd${w ? ' on' : ''}${lg ? ' lg' : ''}${S.isOver(t, d) ? ' over' : ''}${d === today ? ' today' : ''}" data-act="dc-day" data-d="${d}" aria-pressed="${w}" aria-label="${md(d)}${d === today ? ' 오늘' : ''} ${lg ? '이력 있음, 눌러서 이력 보기' : w ? '손댐' : '안 함'}${S.isOver(t, d) ? ' 마감 초과' : ''}"${d > today ? ' disabled' : ''}><i></i><b>${label}</b></button>`;
+    const lg = S.hasLogOn(t, d), ev = S.hasEventOn(t, d);
+    return `<button type="button" class="cd${w ? ' on' : ''}${lg ? ' lg' : ''}${ev ? ' ev' : ''}${S.isOver(t, d) ? ' over' : ''}${d === today ? ' today' : ''}" data-act="dc-day" data-d="${d}" aria-pressed="${w}" aria-label="${md(d)}${d === today ? ' 오늘' : ''} ${lg ? '작업 이력 있음, 눌러서 이력 보기' : w ? '손댐' : '안 함'}${ev ? ', 발생 있음' : ''}${S.isOver(t, d) ? ' 마감 초과' : ''}"${d > today ? ' disabled' : ''}><i></i><b>${label}</b></button>`;
   }).join('');
   return `<div class="dcal">${WD.map(x => `<span class="wd">${x}</span>`).join('')}${'<span></span>'.repeat(S.weekdayOf(days[0]))}${cells}</div>
-    <p class="hint">${days.length}일 중 ${S.workedIn(t, days[0], days[days.length - 1]).length}일 손댐${cut ? ` · 마지막 ${S.DC_MAX_DAYS}일만 표시` : ''}. 빨간 칸은 마감 이후, 밑줄 칸은 이력이 있는 날(눌러서 이동)입니다.</p>`;
+    <p class="hint">${days.length}일 중 ${S.workedIn(t, days[0], days[days.length - 1]).length}일 손댐${cut ? ` · 마지막 ${S.DC_MAX_DAYS}일만 표시` : ''}. 빨간 칸은 마감 이후, 밑줄은 작업 이력이 있는 날(눌러서 이동), 주황 점은 발생이 있었던 날입니다.</p>`;
 }
 function activeSectionHtml(items, now) {
   if (!st.ui.showActive) return '';
