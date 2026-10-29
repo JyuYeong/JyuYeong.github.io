@@ -378,7 +378,7 @@ function cardHtml(t, now) {
       <div class="meta"><span class="proj"><span class="dot" style="background:${p ? esc(p.color) : 'var(--dot)'}"></span>${p ? esc(p.name) : '미분류'}</span>${topicChip(t)}<span class="badge u-${t.urgency}">${URG_LABEL[t.urgency]}</span>${depBadges(t)}</div>
       ${datesHtml(t, now)}
       ${dayStripHtml(t, now)}
-      ${t.memo ? `<div class="memo">${esc(t.memo)}</div>` : ''}
+      ${t.memo ? `<div class="memo" title="${esc(t.memo)}"><span class="mt">${esc(t.memo)}</span></div>` : ''}
     </div>
   </article>`;
 }
@@ -402,7 +402,35 @@ function renderList() {
     ? html
     : `<p class="empty">${liveTasks().length ? '조건에 맞는 Task가 없습니다.' : '아직 Task가 없습니다. 아래에서 추가해 보세요.'}${hidden ? `<br>(완료/취소 ${hidden}건 숨김)` : ''}</p>`;
   $('#swHide').setAttribute('aria-checked', String(q.hideDone));
+  fitMemos();
 }
+
+// ---------- 카드 메모 흐름 (M3.7) ----------
+// 카드 폭을 넘는 메모만 티커처럼 흐르게 한다. 넘치지 않으면 그대로 둔다.
+const MEMO_SPEED = 32; // px/초
+function fitMemos() {
+  document.querySelectorAll('#list .memo').forEach(el => {
+    const first = el.querySelector('.mt');
+    if (!first) return;
+    if (el.classList.contains('flow')) { el.classList.remove('flow'); el.querySelectorAll('.mt.dup').forEach(d => d.remove()); el.querySelector('.mtrack')?.replaceWith(first); }
+    if (!el.clientWidth || first.scrollWidth <= el.clientWidth + 1) return;
+    const w = first.scrollWidth;
+    const track = document.createElement('span');
+    track.className = 'mtrack';
+    first.replaceWith(track);
+    const dup = first.cloneNode(true); dup.classList.add('dup'); dup.setAttribute('aria-hidden', 'true');
+    track.append(first, dup);
+    el.style.setProperty('--m-dur', `${Math.max(6, Math.round((w + 40) / MEMO_SPEED / 0.85))}s`);
+    el.classList.add('flow');
+  });
+}
+let memoW = 0;
+new ResizeObserver(es => {
+  const w = Math.round(es[0].contentRect.width);
+  if (w === memoW) return;
+  memoW = w;
+  clearTimeout(fitMemos.tm); fitMemos.tm = setTimeout(fitMemos, 120);
+}).observe(document.querySelector('#list'));
 
 function renderSide() {
   const active = liveTasks().filter(t => !isFin(t));
@@ -448,7 +476,7 @@ function panelHtml(t) {
     </div>
     <div class="dcfield"><button type="button" class="sw" role="switch" data-act="toggle-daycheck" aria-checked="${!!t.day_check}"><i></i>날짜별 체크 (손댄 날 표시)</button>
       ${t.day_check ? dayCalHtml(t, S.nowKST()) : ''}</div>
-    <div><label class="fl" for="f-memo">메모 (한 줄)</label><input class="in" id="f-memo" data-f="memo" maxlength="200" value="${esc(t.memo)}"></div>
+    <div><label class="fl" for="f-memo">메모</label><textarea class="in memoin" id="f-memo" data-f="memo" maxlength="200" rows="1" enterkeyhint="done">${esc(t.memo)}</textarea></div>
     <p class="tsfoot" id="tsFoot">${tsFootHtml(t)}</p>
   </div>
   <div class="pf"><span class="lbl">Task ID</span><button class="idbtn" data-act="copy-id" data-id="${t.id}" aria-label="Task ID ${t.id} 복사">${ic('copy', 'width:14px;height:14px')}${t.id}</button><button class="del" data-act="delete" data-id="${t.id}">${ic('trash')}삭제</button></div>`;
@@ -469,6 +497,7 @@ function renderPanel() {
   const t = ui.selectedId ? taskById(ui.selectedId) : null;
   if (!t) ui.selectedId = null;
   $('#panel').innerHTML = panelHtml(t);
+  requestAnimationFrame(() => growMemo($('#f-memo')));
   document.body.classList.toggle('sheet-open', !!t && !wide());
   document.body.classList.toggle('no-sel', !t); // 넓은 화면: 선택이 없으면 패널을 접음
 }
@@ -966,7 +995,16 @@ document.addEventListener('input', e => {
   if (!t) return;
   const v = e.target.value;
   if (f === 'title') { if (v.trim()) { t.title = v.trim(); touch(t); } }
-  else if (f === 'memo') { t.memo = v; touch(t); }
+  else if (f === 'memo') {
+    const one = v.replace(/[\r\n]+/g, ' ');
+    if (one !== v) e.target.value = one;
+    t.memo = one; touch(t); growMemo(e.target);
+  }
+});
+// 메모 입력칸: 줄바꿈 없이 저장하되, 화면에서는 내용 길이만큼 자동으로 늘어난다
+function growMemo(el) { if (!el) return; el.style.height = 'auto'; el.style.height = el.scrollHeight + 2 + 'px'; }
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.matches?.('textarea.memoin')) { e.preventDefault(); e.target.blur(); }
 });
 document.addEventListener('change', e => {
   const f = e.target.dataset?.f;
