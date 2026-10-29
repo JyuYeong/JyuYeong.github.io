@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style; img-src 'self' data:; connect-src 'self' https://www.googleapis.com https://accounts.google.com; frame-src https://accounts.google.com">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171A21" media="(prefers-color-scheme: dark)">
+<title>Task Manager v2</title>
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="icon" href="icons/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="no-sel">
+<div class="app">
+  <nav class="side" id="side" aria-label="라벨"></nav>
+
+  <div class="main">
+    <header class="top">
+      <h1>Task Manager <span class="ver">v2</span></h1>
+      <button class="sync" id="syncLabel" data-act="sync-click">이 기기에 저장됨</button>
+      <button class="icbtn only-narrow" data-act="settings" aria-label="설정">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h9M18 8h1M5 16h1M10 16h9"/><circle cx="16" cy="8" r="2"/><circle cx="8" cy="16" r="2"/></svg>
+      </button>
+    </header>
+    <div class="chips only-narrow" id="chips" role="toolbar" aria-label="라벨"></div>
+    <div class="bar">
+      <button class="btn" id="btnFilter" data-act="filter-sheet" aria-haspopup="dialog"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>필터·정렬<span class="cnt" id="fcnt" hidden></span></button><span class="sortlbl" id="sortLbl"></span>
+      <button class="sw" id="swHide" role="switch" aria-checked="true"><i></i>완료/취소 숨김</button>
+    </div>
+    <section class="list" id="list" aria-label="Task 목록"></section>
+    <div class="ticker" id="ticker" hidden></div>
+    <form class="quick" id="quick" autocomplete="off">
+      <input id="quickInput" aria-label="새 Task 제목" placeholder="Task 추가" maxlength="200">
+      <button type="submit" class="fab" aria-label="Task 추가">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </form>
+  </div>
+
+  <aside class="panel" id="panel" aria-label="Task 편집"></aside>
+  <div class="backdrop" id="backdrop"></div>
+</div>
+
+<div id="menuRoot"></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<dialog id="dlg"></dialog>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
