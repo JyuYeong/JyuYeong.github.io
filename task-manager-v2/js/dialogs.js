@@ -3,8 +3,9 @@ import * as S from './store.js';
 import { st, liveTasks, STATUS_LABEL, URG_LABEL, SORT_LABEL, GROUP_LABEL, DUE_LABEL } from './state.js';
 import { esc, ic, openDlg, dlgIs, setDlgBody } from './util.js';
 import { visibleTasks, byCreated } from './render.js';
+import * as Sync from './sync.js';
 
-export const APP_VERSION = 'v2 · V2';
+export const APP_VERSION = 'v2 · V3';
 const doc = () => st.doc;
 const live = arr => arr.filter(x => !x.deleted_at);
 const seg = (field, options, cur) => `<div class="seg xs" role="group">${options.map(([v, l]) => `<button type="button" data-act="set-${field}" data-v="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div>`;
@@ -112,12 +113,20 @@ export function filterHtml() {
 }
 
 // ---------- 설정 ----------
+const SYNC_TEXT = { off: '사용 안 함', 'needs-auth': '로그인 필요', syncing: '동기화 중…', ok: '정상', offline: '오프라인', error: '오류' };
+function syncHtml() {
+  const s = Sync.getState();
+  return `<div class="kv"><span>Google Drive 동기화</span><span>${SYNC_TEXT[s.status] || s.status}${s.lastSync ? ' · ' + esc(s.lastSync) : ''}</span></div>
+    ${s.detail && s.status !== 'ok' ? `<p class="hint">${esc(s.detail)}</p>` : ''}
+    ${s.signedIn ? '<div class="btns"><button class="btn" data-act="sync-now">지금 동기화</button><button class="btn" data-act="sign-out">로그아웃 (동기화 중지)</button></div>'
+      : '<button class="btn primary" data-act="sign-in">Google 로그인 · Drive 동기화 켜기</button><p class="hint">저장 위치: 내 드라이브 › 05 CMTINFO › 07 Task Manager › v2. 처음 켜면 이 기기와 Drive의 데이터를 항목별로 합칩니다.</p>'}`;
+}
 export function settingsHtml() {
   const persisted = settingsHtml.persisted;
   return `<div class="kv"><span>버전</span><span>${APP_VERSION}</span></div>
     <div class="kv"><span>저장 위치</span><span>${S.storageOk ? '이 기기 (IndexedDB)' : '저장 불가 (임시)'}</span></div>
     <div class="kv"><span>브라우저 보존 보장</span><span>${persisted === undefined ? '확인 중' : persisted ? '예' : '아니오'}</span></div>
-    <div class="kv"><span>Google Drive 동기화</span><span>V3에서 추가</span></div>
+    ${syncHtml()}
     <div class="kv"><span>화면 크기 (CSS px)</span><span id="scrSize">${innerWidth} × ${innerHeight}</span></div>
     <button type="button" class="sw" role="switch" data-act="toggle-showactive" aria-checked="${st.ui.showActive}"><i></i>목록 맨 위에 “진행 기간 중” 묶음 표시 (이 기기)</button>
     <div class="kv"><span>Task / 라벨 / 주제</span><span>${liveTasks().length}건 / ${S.liveLabels(doc()).length}개 / ${live(doc().topics).length}개</span></div>

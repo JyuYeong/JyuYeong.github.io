@@ -1,5 +1,6 @@
 // 시작과 사용자 동작 처리
 import * as S from './store.js';
+import * as Sync from './sync.js';
 import { st, DEFAULT_Q, DEFAULT_TIME, STATUS_LABEL, loadPrefs, savePrefs, persist, persistLogs, liveTasks, taskById, selTask, onSaved } from './state.js';
 import { $, esc, ic, stIcon, wide, toast, dlg, openDlg, dlgIs, setDlgBody, openMenu, armed, copyText, download } from './util.js';
 import { renderList, renderSide, renderPanel, renderTicker, renderAll, touch, refreshPanelValues, growArea, fitMemos, visibleTasks, tsFootHtml } from './render.js';
@@ -9,12 +10,37 @@ import { labelsHtml, refreshLabelsDlg, openLabels, openTopicsOf, newLabelDialog,
 const doc = () => st.doc;
 const now = () => new Date().toISOString();
 
+const SYNC_LABEL = {
+  'needs-auth': ['로그인 필요', 'warn'], syncing: ['동기화 중…', ''], offline: ['오프라인 (대기 중)', ''], error: ['동기화 오류', 'warn'],
+};
 function renderSyncLabel() {
   const el = $('#syncLabel');
-  el.textContent = S.storageOk ? '이 기기에 저장됨' : '저장 불가 (임시)';
-  el.className = 'sync' + (S.storageOk ? '' : ' warn');
+  const stt = Sync.getState();
+  let [text, cls] = SYNC_LABEL[stt.status] || [];
+  if (stt.status === 'ok') { text = `동기화됨 ${stt.lastSync ? stt.lastSync.slice(-5) : ''}`; cls = 'ok'; }
+  if (!text) { text = S.storageOk ? '이 기기에 저장됨' : '저장 불가 (임시)'; cls = S.storageOk ? '' : 'warn'; }
+  el.textContent = text;
+  el.className = 'sync ' + cls;
+  el.title = stt.detail || '';
+  if (dlgIs('settings') && !dlg.contains(document.activeElement?.closest('input') || null)) setDlgBody(settingsHtml());
 }
-onSaved(renderSyncLabel);
+onSaved(() => { renderSyncLabel(); Sync.schedule(); });
+
+// 다른 기기의 변경이 병합되어 들어왔을 때: 저장하고 다시 그린다 (입력 중인 칸은 건드리지 않음)
+async function applyMerged({ core, logs }) {
+  if (core) { st.doc = core; await S.save(st.doc); }
+  if (logs) { st.logs = logs; S.indexLogs(st.logs); await S.saveLogs(st.logs); }
+  if (!['all', 'none'].includes(st.ui.filter) && !S.labelById(st.doc, st.ui.filter)) st.ui.filter = 'all';
+  renderSide(); renderList(); renderTicker();
+  const typing = document.activeElement && $('#panel').contains(document.activeElement) && /INPUT|TEXTAREA/.test(document.activeElement.tagName);
+  if (!typing || (st.ui.selectedId && !selTask())) renderPanel();
+  const dlgTyping = dlg.contains(document.activeElement?.closest('input, textarea') || null);
+  if (!dlgTyping) {
+    if (dlgIs('filter')) setDlgBody(filterHtml());
+    if (dlgIs('labels')) refreshLabelsDlg();
+    if (dlgIs('ticker')) refreshTickerDlg();
+  }
+}
 
 function setRail(v) { st.ui.railOpen = v; $('.app').classList.toggle('rail-open', v); renderSide(); }
 function closePanel() { st.ui.selectedId = null; renderPanel(); renderList(); }
@@ -290,7 +316,7 @@ document.addEventListener('click', async e => {
     }
     case 'toggle-showactive': st.ui.showActive = !st.ui.showActive; savePrefs(); renderList(); setDlgBody(settingsHtml(), '[data-act="toggle-showactive"]'); break;
     case 'export-json': download(`tm2-backup-${S.todayKST().replaceAll('-', '')}.json`, JSON.stringify({ core: doc(), logs: st.logs }, null, 2)); break;
-    case 'wipe': if (armed(el, '정말 삭제합니다 — 한 번 더 누르세요')) { await S.clearAll(); location.reload(); } break;
+    case 'wipe': if (armed(el, '정말 삭제합니다 — 한 번 더 누르세요')) { Sync.resetSeen(); await S.clearAll(); location.reload(); } break;
     case 'close-dlg': dlg.close(); break;
 
     // 작업 이력
@@ -310,7 +336,10 @@ document.addEventListener('click', async e => {
     case 'lg-unlink': if (composer.taskIds.length > 1) { composer.taskIds = composer.taskIds.filter(x => x !== id); refreshLinked(); } break;
     case 'md-h': case 'md-b': case 'md-li': case 'md-cb': case 'md-code': mdFormat(act.slice(3)); break;
     case 'md-preview': togglePreview(el); break;
-    case 'sync-click': openDlg('settings', '설정', settingsHtml()); break;
+    case 'sync-click': if (Sync.getState().signedIn) Sync.syncNow(); else openDlg('settings', '설정', settingsHtml()); break;
+    case 'sign-in': Sync.signIn(); break;
+    case 'sign-out': if (armed(el, '한 번 더 누르면 동기화 중지')) { Sync.signOut(); toast('동기화를 중지했습니다. 이 기기의 데이터는 그대로 남아 있습니다.'); } break;
+    case 'sync-now': Sync.syncNow(); break;
   }
 });
 
@@ -494,6 +523,7 @@ new ResizeObserver(es => {
   st.logs = await S.loadLogs();
   loadPrefs();
   renderAll();
+  Sync.init({ getCore: () => st.doc, getLogs: () => st.logs, apply: applyMerged, onStatus: renderSyncLabel });
   renderSyncLabel();
   navigator.storage?.persist?.().then(v => { settingsHtml.persisted = v; }).catch(() => {});
   setInterval(() => { renderList(); renderSide(); renderTicker(); }, 60000);
