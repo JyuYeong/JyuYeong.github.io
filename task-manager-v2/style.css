@@ -591,3 +591,104 @@ dialog[data-kind="log"]{width:min(560px,calc(100vw - 24px))}
 .md .cbx{position:relative}
 .md .cbx.on{background:var(--ok);border-color:var(--ok);background-image:none}
 .md .cbx.on::after{content:"";position:absolute;left:3px;top:0;width:3px;height:7px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+
+/* ======================================================================
+   v2 (V4): 대시보드 · 라벨 보기 · 주제 보기
+   ====================================================================== */
+.page{flex:1;min-height:0;overflow-y:auto;padding:4px 16px 24px;display:flex;flex-direction:column;gap:12px}
+@media (min-width:700px){.page{padding-left:20px;padding-right:20px}}
+@media (min-width:1100px){.page{padding-left:28px;padding-right:28px}}
+.page>*{flex:none}
+button.lb{border:0;background:none;padding:0;cursor:pointer;border-radius:4px}
+button.lb:hover .t{text-decoration:underline}
+button.topic{border:0;cursor:pointer}
+button.topic:hover{background:var(--hover)}
+.pgh{display:flex;align-items:center;gap:6px;min-height:48px}
+.pgh h2{margin:0;flex:1;min-width:0;display:flex;align-items:center;gap:8px;font-size:18px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pgh h2 .dot{width:12px;height:12px}
+.pgh h2 .ic{width:18px;height:18px;color:var(--muted)}
+.pgh .icbtn{margin-left:-10px}
+.pgsub{margin:-8px 0 0;font-size:13px;color:var(--muted)}
+.lnk{display:inline-flex;align-items:center;gap:6px;border:0;background:none;padding:0;color:var(--ink2);font-weight:600}
+.lnk:hover{text-decoration:underline}
+.pgmemo{margin:0;padding:8px 12px;border-radius:10px;background:var(--surface);border:1px solid var(--line);font-size:13.5px;color:var(--ink2);white-space:pre-wrap}
+.pgs{display:flex;flex-direction:column;gap:6px;padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:14px}
+.pgs h3{margin:0 0 2px;font-size:13px;font-weight:700;color:var(--muted);display:flex;align-items:center;gap:6px}
+.pgs h3 .n{font-weight:600;color:var(--ink2)}
+/* 상태 칩·KPI */
+.stchips{display:flex;flex-wrap:wrap;gap:6px}
+.stc{display:inline-flex;align-items:baseline;gap:5px;height:34px;padding:0 12px;border:1px solid var(--line2);border-radius:999px;background:var(--surface);font-size:12.5px;color:var(--ink2)}
+.stc b{font-size:15px;color:var(--ink)}
+.stc:disabled{opacity:.45;cursor:default}
+.stc.delayed:not(:disabled){border-color:var(--danger-line)}
+.stc.delayed:not(:disabled) b{color:var(--danger)}
+.stc.in_progress b{color:var(--st-prog)}
+.stc.done b{color:var(--st-done)}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+@media (max-width:560px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.kpi{display:flex;flex-direction:column;gap:2px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font-size:12.5px;color:var(--muted);text-align:left;text-decoration:none}
+.kpi b{font-size:22px;line-height:1.1;color:var(--ink);font-variant-numeric:tabular-nums}
+.kpi.warn b{color:var(--danger)}
+button.kpi:disabled{cursor:default}
+button.kpi:not(:disabled):hover,a.kpi:hover{background:var(--hover)}
+/* 라벨별 표 */
+.tblw{overflow-x:auto;margin:0 -4px}
+.dtbl{width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums}
+.dtbl th,.dtbl td{padding:0 4px;height:36px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+.dtbl thead th{font-size:11.5px;font-weight:700;color:var(--muted);height:30px}
+.dtbl th[scope="row"],.dtbl thead th:first-child{text-align:left;width:100%;max-width:0}
+.dtbl .lc{display:flex;align-items:center;gap:2px;min-width:0}
+.dtbl .tg{height:28px;width:24px;justify-content:center;flex:none}
+.dtbl .tgs{width:24px;flex:none}
+.dtbl .ln{display:inline-flex;align-items:center;gap:6px;min-width:0;border:0;background:none;padding:0 4px;height:28px;border-radius:6px;font-weight:600;color:var(--ink)}
+.dtbl .ln span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dtbl .ln:hover{background:var(--hover)}
+.dtbl .gr th .ln{padding-left:32px;font-weight:500;color:var(--ink2)}
+.dtbl .gr .ln .ic{width:13px;height:13px;color:var(--muted)}
+.dtbl td button{min-width:30px;height:28px;border:0;border-radius:6px;background:none;font:inherit;font-weight:600;color:var(--ink)}
+.dtbl td button:hover{background:var(--accent-weak);color:var(--accent-ink)}
+.dtbl td span{color:var(--line2)}
+.dtbl td.delayed button{color:var(--danger)}
+.dtbl td.all button{color:var(--ink2)}
+.dtbl tfoot th,.dtbl tfoot td{border-bottom:0;border-top:2px solid var(--line2)}
+.dtbl tfoot th{font-weight:700;padding-left:30px}
+@media (max-width:560px){.dtbl{font-size:12px}.dtbl td button{min-width:24px}.dtbl thead th{font-size:10.5px}}
+/* 주제 줄 (라벨 보기) */
+.grow{display:grid;grid-template-columns:1fr auto;grid-template-areas:"n go" "m go" "c go";gap:2px 8px;align-items:center;width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--surface);text-align:left}
+.grow:hover{background:var(--hover)}
+.grow.arch{opacity:.6}
+.grow .gn{grid-area:n;display:flex;align-items:center;gap:6px;min-width:0;font-size:14px}
+.grow .gn .ic{width:14px;height:14px;color:var(--muted)}
+.grow .gn b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grow .gn em{font-style:normal;font-size:11px;color:var(--muted)}
+.grow .gm2{grid-area:m;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grow .gcs{grid-area:c;display:flex;flex-wrap:wrap;gap:8px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.grow .gcs .delayed{color:var(--danger);font-weight:700}
+.grow .gcs .in_progress{color:var(--st-prog);font-weight:600}
+.grow .go{grid-area:go;color:var(--muted)}
+/* 작은 Task 줄 */
+.trows{display:flex;flex-direction:column}
+.trow{display:flex;align-items:center;gap:8px;min-height:40px;padding:4px 6px;border-radius:8px;cursor:pointer}
+.trow + .trow{border-top:1px solid var(--line)}
+.trow:hover{background:var(--hover)}
+.trow[aria-current="true"]{box-shadow:inset 0 0 0 1.5px var(--accent)}
+.trow .st{width:20px;height:20px}
+.trow .tt{flex:1;min-width:0;font-size:14px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trow.fin .tt{color:var(--muted);text-decoration:line-through}
+.trow .tl3{display:inline-flex;gap:3px}
+.trow .tl3 .dot{width:8px;height:8px}
+.trow .tm{display:inline-flex;gap:8px;font-size:12px;color:var(--muted);white-space:nowrap}
+.trow .tm .late,.trow .tm .warn{color:var(--danger);font-weight:600}
+@media (max-width:480px){.trow{flex-wrap:wrap}.trow .tm{width:100%;padding-left:28px}}
+.lk2{flex-wrap:wrap}
+.lk2 button{border:0;background:var(--soft);color:var(--ink2);border-radius:5px;height:20px;padding:0 6px;font-size:11.5px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* 목록 위 라벨 머리말 */
+.lhead{display:flex;align-items:center;gap:8px;flex:none;padding:8px 10px 8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);font-size:14px}
+.lhead .lm{flex:1;min-width:0;font-size:12.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lhead b{flex:none}
+.lhead .btn{margin-left:auto;flex:none}
+.lhead .btn .ic{width:14px;height:14px}
+.dtbl th[scope="row"]{overflow:hidden}
+.dtbl .ln{max-width:100%}
+.dtbl .gr th .ln{display:flex}
+.dtbl .lc .ln{flex:1 1 auto;max-width:calc(100% - 26px)}

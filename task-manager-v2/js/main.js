@@ -5,6 +5,7 @@ import { st, DEFAULT_Q, DEFAULT_TIME, STATUS_LABEL, loadPrefs, savePrefs, persis
 import { $, esc, ic, stIcon, wide, toast, dlg, openDlg, dlgIs, setDlgBody, openMenu, armed, copyText, download } from './util.js';
 import { renderList, renderSide, renderPanel, renderTicker, renderAll, touch, refreshPanelValues, growArea, fitMemos, visibleTasks, tsFootHtml } from './render.js';
 import { openComposer, composer, refreshLinked, refreshSuggest, refreshDateNote, refreshCount, mdFormat, togglePreview, scrollToLog } from './logs.js';
+import { dashOpen } from './views.js';
 import { labelsHtml, refreshLabelsDlg, openLabels, openTopicsOf, newLabelDialog, newTopicDialog, filterHtml, settingsHtml, tickerHtml, TK_STATE } from './dialogs.js';
 
 const doc = () => st.doc;
@@ -42,6 +43,12 @@ async function applyMerged({ core, logs }) {
   }
 }
 
+function goPage(p) {
+  st.ui.page = p;
+  setRail(false);
+  renderList(); renderSide();
+  $(p.kind === 'list' ? '#list' : '#page').scrollTop = 0;
+}
 function setRail(v) { st.ui.railOpen = v; $('.app').classList.toggle('rail-open', v); renderSide(); }
 function closePanel() { st.ui.selectedId = null; renderPanel(); renderList(); }
 function refreshFilter() { savePrefs(); renderList(); renderSide(); if (dlgIs('filter')) setDlgBody(filterHtml()); }
@@ -148,7 +155,24 @@ document.addEventListener('click', async e => {
   const cur = selTask();
 
   switch (act) {
-    case 'filter': st.ui.filter = el.dataset.v; setRail(false); renderList(); break;
+    case 'filter': st.ui.filter = el.dataset.v; st.ui.page = { kind: 'list', id: null }; setRail(false); renderList(); renderSide(); $('#list').scrollTop = 0; break;
+
+    // 페이지: 대시보드 · 라벨 보기 · 주제 보기
+    case 'page-dash': goPage({ kind: 'dash', id: null }); break;
+    case 'label-view': e.stopPropagation(); goPage({ kind: 'label', id }); break;
+    case 'topic-view': e.stopPropagation(); goPage({ kind: 'topic', id }); break;
+    case 'dash-toggle': dashOpen.has(id) ? dashOpen.delete(id) : dashOpen.add(id); renderList(); $(`#page [data-act="dash-toggle"][data-id="${id}"]`)?.focus(); break;
+    case 'go-list': {
+      const [kind, sid] = el.dataset.scope.split(':');
+      const k = el.dataset.st;
+      st.q = { ...DEFAULT_Q, statuses: k === 'all' ? [] : [k], hideDone: k === 'all' ? false : true };
+      st.ui.filter = 'all';
+      if (kind === 'label') st.ui.filter = sid;
+      if (kind === 'topic') { const g = S.topicById(doc(), sid); if (g) { st.ui.filter = g.label_id; st.q.topics = [g.id]; } }
+      savePrefs();
+      goPage({ kind: 'list', id: null });
+      break;
+    }
     case 'rail-toggle': setRail(!st.ui.railOpen); break;
     case 'open': st.ui.selectedId = id; renderPanel(); renderList(); break;
     case 'close-panel': closePanel(); break;
@@ -495,11 +519,17 @@ $('#quick').addEventListener('submit', e => {
   const input = $('#quickInput');
   const title = input.value.trim();
   if (!title) return;
-  const f = st.ui.filter;
-  S.createTask(doc(), { title, label_ids: f !== 'all' && f !== 'none' ? [f] : [] });
+  // 지금 보고 있는 라벨·주제를 붙여서 만든다
+  const p = st.ui.page, f = st.ui.filter;
+  let fields = { label_ids: f !== 'all' && f !== 'none' ? [f] : [] };
+  if (p.kind === 'label') fields = { label_ids: p.id !== 'none' && S.labelById(doc(), p.id) ? [p.id] : [] };
+  if (p.kind === 'topic') { const g = S.topicById(doc(), p.id); fields = g ? { label_ids: [g.label_id], topic_ids: [g.id] } : {}; }
+  if (p.kind === 'dash') fields = {};
+  const t = S.createTask(doc(), { title, ...fields });
   input.value = '';
   persist(); renderSide(); renderList();
-  $('#list').scrollTop = 0;
+  if (p.kind === 'list') $('#list').scrollTop = 0;
+  else toast(`“${t.title}” 추가됨`, { act: 'open', id: t.id, label: '열기' });
 });
 
 let tkResize, memoW = 0;

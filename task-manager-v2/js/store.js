@@ -254,6 +254,18 @@ export function dayCheckSummary(t, today = todayKST()) {
   else { const n = dayDiff(last, today); text = `${n}일째 안 함`; warn = n >= 2; }
   return { text: over + text, warn: warn || !!over };
 }
+// 마지막으로 손댄 날 (기간과 관계없이, 직접 찍은 날·이력 작업일 중 가장 최근). 없으면 ''
+export function lastActivity(t) {
+  let d = t.marked_days.length ? t.marked_days[t.marked_days.length - 1] : '';
+  logIdx.get(t.id)?.forEach((_, k) => { if (k > d) d = k; });
+  return d;
+}
+// 상태 집계: { all, todo, in_progress, delayed, done, canceled } (지연 중은 대기·진행 중에서 빼서 따로 센다)
+export function statusCounts(tasks, now = nowKST()) {
+  const c = { all: 0, todo: 0, in_progress: 0, delayed: 0, done: 0, canceled: 0 };
+  for (const t of tasks) { c.all++; c[displayStatus(t, now)]++; }
+  return c;
+}
 export const lastWorked = (t, today = todayKST()) => (dcRange(t, today) ? workedIn(t, t.start_date, today).pop() || '' : '');
 
 // ---------- 저장된 뷰 ----------

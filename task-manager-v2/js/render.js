@@ -4,6 +4,7 @@ import { st, liveTasks, taskById, selTask, persist, STATUS_LABEL, URG_LABEL, URG
 import { $, esc, ic, stIcon, wide } from './util.js';
 import { timelineHtml } from './logs.js';
 import { plainMd } from './md.js';
+import { renderPage, labelHeadHtml } from './views.js';
 
 const doc = () => st.doc;
 const labels = () => S.liveLabels(doc());
@@ -119,13 +120,13 @@ function labelTags(t, max = 2) {
   const ls = S.taskLabels(doc(), t);
   if (!ls.length) return `<span class="lb none">${dot(null)}미분류</span>`;
   const more = ls.length - max;
-  return ls.slice(0, max).map(l => `<span class="lb">${dot(l)}<span class="t">${esc(l.name)}</span></span>`).join('')
+  return ls.slice(0, max).map(l => `<button type="button" class="lb" data-act="label-view" data-id="${l.id}" title="${esc(l.name)} 라벨 보기">${dot(l)}<span class="t">${esc(l.name)}</span></button>`).join('')
     + (more > 0 ? `<span class="more" title="${esc(ls.slice(max).map(l => l.name).join(', '))}">+${more}</span>` : '');
 }
 function topicTags(t, max = 2) {
   const gs = S.taskTopics(doc(), t);
   const more = gs.length - max;
-  return gs.slice(0, max).map(g => `<span class="topic" title="주제: ${esc(g.name)}${g.memo ? ' — ' + esc(g.memo) : ''}">${ic('tag')}<span class="t">${esc(g.name)}</span></span>`).join('')
+  return gs.slice(0, max).map(g => `<button type="button" class="topic" data-act="topic-view" data-id="${g.id}" title="주제 보기: ${esc(g.name)}${g.memo ? ' — ' + esc(g.memo) : ''}">${ic('tag')}<span class="t">${esc(g.name)}</span></button>`).join('')
     + (more > 0 ? `<span class="more" title="${esc(gs.slice(max).map(g => g.name).join(', '))}">+${more}</span>` : '');
 }
 function datesHtml(t, now) {
@@ -226,6 +227,8 @@ function cardHtml(t, now) {
   </article>`;
 }
 export function renderList() {
+  renderPage();
+  if (st.ui.page.kind !== 'list') return;
   const now = S.nowKST();
   const items = visibleTasks();
   const q = st.q;
@@ -241,8 +244,8 @@ export function renderList() {
   $('#fcnt').hidden = !fc; $('#fcnt').textContent = fc;
   $('#sortLbl').textContent = `${SORT_LABEL[q.sort]} ${q.dir === 'asc' ? '↑' : '↓'}${q.group !== 'none' ? ' · ' + GROUP_LABEL[q.group] + '별' : ''}`;
   const hidden = q.hideDone && !q.statuses.length ? liveTasks().filter(inSideFilter).filter(S.isFin).length : 0;
-  $('#list').innerHTML = items.length ? html
-    : `<p class="empty">${liveTasks().length ? '조건에 맞는 Task가 없습니다.' : '아직 Task가 없습니다. 아래에서 추가해 보세요.'}${hidden ? `<br>(완료/취소 ${hidden}건 숨김)` : ''}</p>`;
+  $('#list').innerHTML = labelHeadHtml() + (items.length ? html
+    : `<p class="empty">${liveTasks().length ? '조건에 맞는 Task가 없습니다.' : '아직 Task가 없습니다. 아래에서 추가해 보세요.'}${hidden ? `<br>(완료/취소 ${hidden}건 숨김)` : ''}</p>`);
   $('#swHide').setAttribute('aria-checked', String(q.hideDone));
   fitMemos();
 }
@@ -274,10 +277,12 @@ export function renderSide() {
   labels().filter(l => !l.archived || st.ui.filter === l.id).forEach(l => items.push({ v: l.id, name: l.name, color: l.color }));
   if (count('none') || st.ui.filter === 'none') items.push({ v: 'none', name: '미분류' });
   const lead = it => it.icon || `<span class="dot" style="background:${it.color ? esc(it.color) : 'var(--dot)'}"></span>`;
-  $('#chips').innerHTML = items.map(it => `<button class="chip" data-act="filter" data-v="${it.v}" aria-pressed="${st.ui.filter === it.v}">${it.icon ? '' : lead(it)}${esc(it.name)} <span class="n">${count(it.v)}</span></button>`).join('');
+  const onList = st.ui.page.kind === 'list';
+  $('#chips').innerHTML = items.map(it => `<button class="chip" data-act="filter" data-v="${it.v}" aria-pressed="${onList && st.ui.filter === it.v}">${it.icon ? '' : lead(it)}${esc(it.name)} <span class="n">${count(it.v)}</span></button>`).join('');
   const views = st.doc.views.filter(v => !v.deleted_at);
-  $('#side').innerHTML = `<button class="nav rail-toggle" data-act="rail-toggle" aria-expanded="${st.ui.railOpen}" title="메뉴 펼치기/접기">${ic(st.ui.railOpen ? 'chevL' : 'chevR')}<span class="lbl">접기</span></button><h3>라벨</h3>`
-    + items.map(it => `<button class="nav" data-act="filter" data-v="${it.v}" aria-pressed="${st.ui.filter === it.v}" title="${esc(it.name)}">${lead(it)}<span class="lbl">${esc(it.name)}</span><span class="n">${count(it.v)}</span></button>`).join('')
+  $('#side').innerHTML = `<button class="nav rail-toggle" data-act="rail-toggle" aria-expanded="${st.ui.railOpen}" title="메뉴 펼치기/접기">${ic(st.ui.railOpen ? 'chevL' : 'chevR')}<span class="lbl">접기</span></button>`
+    + `<button class="nav" data-act="page-dash" aria-pressed="${st.ui.page.kind === 'dash'}" title="대시보드">${ic('dash')}<span class="lbl">대시보드</span></button><h3>라벨</h3>`
+    + items.map(it => `<button class="nav" data-act="filter" data-v="${it.v}" aria-pressed="${onList && st.ui.filter === it.v}" title="${esc(it.name)}">${lead(it)}<span class="lbl">${esc(it.name)}</span><span class="n">${count(it.v)}</span></button>`).join('')
     + `<button class="vh" data-act="toggle-views" aria-expanded="${st.ui.viewsOpen}">${ic('chev')}저장된 뷰</button>`
     + (st.ui.viewsOpen ? (views.map(v => `<button class="nav vh-item" data-act="apply-view" data-id="${v.id}" title="${esc(v.name)}"><span class="lbl">${esc(v.name)}</span></button>`).join('') || '<span class="hint" style="margin:0 10px">저장된 뷰 없음</span>') : '')
     + `<span class="sp"></span>`

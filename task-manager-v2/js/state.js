@@ -15,7 +15,7 @@ export const DEFAULT_Q = { text: '', statuses: [], urgencies: [], labels: [], la
 export const st = {
   doc: null,
   logs: null, // 작업 이력 문서 { schema: 'tm2-logs', logs: [] }
-  ui: { filter: 'all', selectedId: null, viewsOpen: true, railOpen: false, activeOpen: true, showActive: true, propsOpen: true, calOpen: false },
+  ui: { filter: 'all', selectedId: null, viewsOpen: true, railOpen: false, activeOpen: true, showActive: true, propsOpen: true, calOpen: false, page: { kind: 'list', id: null } },
   q: { ...DEFAULT_Q },
 };
 

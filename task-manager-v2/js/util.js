@@ -25,6 +25,7 @@ const P = {
   filter: '<path d="M4 6h16M7 12h10M10 18h4"/>',
   up: '<path d="M7 14l5-5 5 5"/>',
   down: '<path d="M7 10l5 5 5-5"/>',
+  dash: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="4" rx="1.5"/><rect x="13" y="10" width="7" height="10" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/>',
   dots: '<circle cx="6" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="18" cy="12" r="1.3"/>',
   note: '<path d="M6 4h9l3 3v13H6z"/><path d="M9 10h6M9 14h6M9 18h3"/>',
 };
