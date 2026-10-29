@@ -6,7 +6,12 @@ import { renderMd } from './md.js';
 
 const WD = ['일', '월', '화', '수', '목', '금', '토'];
 const kstTime = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-const hm = iso => { const d = new Date(iso); return isNaN(d) ? '' : kstTime.format(d); };
+// 작성·수정 시각: 타임라인에는 보이지 않고(본문에 적은 시각과 헷갈리지 않도록) 툴팁과 수정 화면에서만 보인다
+const stampText = l => {
+  const f = iso => { const d = new Date(iso); return isNaN(d) ? '' : `${S.kstDateOf(iso).slice(5).replace('-', '/')} ${kstTime.format(d)}`; };
+  const edited = l.updated_at && l.created_at && (new Date(l.updated_at) - new Date(l.created_at) > 60000);
+  return `작성 ${f(l.created_at)}${edited ? ` · 수정 ${f(l.updated_at)}` : ''}`;
+};
 export const dayLabel = d => {
   const [y, m, dd] = d.split('-');
   return `${y === S.todayKST().slice(0, 4) ? '' : y + '. '}${+m}/${+dd} (${WD[S.weekdayOf(d)]})`;
@@ -32,10 +37,9 @@ export function timelineHtml(t) {
     }
     const others = l.task_ids.filter(id => id !== t.id).map(taskById).filter(Boolean);
     const link = others.length ? `<span class="lk">${ic('link')}${others.slice(0, 2).map(o => `<button type="button" data-act="open" data-id="${o.id}" title="${esc(o.title)} (${o.id})">${esc(o.title)}</button>`).join('')}${others.length > 2 ? `<span class="more">+${others.length - 2}</span>` : ''}</span>` : '';
-    const edited = l.updated_at && l.created_at && (new Date(l.updated_at) - new Date(l.created_at) > 60000) ? ' · 수정됨' : '';
     const ev = S.logKind(l) === 'event';
-    html += `<article class="tle${ev ? ' ev' : ''}" id="log-${l.id}">
-      <div class="tlm">${ev ? '<span class="kb ev">발생</span>' : ''}<time title="작성 ${esc(l.created_at)}">${hm(l.created_at)}${edited}</time>${link}<button type="button" class="icbtn xs" data-act="log-menu" data-id="${l.id}" aria-label="이력 메뉴" aria-haspopup="menu">${ic('dots')}</button></div>
+    html += `<article class="tle${ev ? ' ev' : ''}" id="log-${l.id}" title="${esc(stampText(l))}">
+      <div class="tlm">${ev ? '<span class="kb ev">발생</span>' : ''}${link}<button type="button" class="icbtn xs" data-act="log-menu" data-id="${l.id}" aria-label="이력 메뉴" aria-haspopup="menu">${ic('dots')}</button></div>
       <div class="md">${renderMd(l.body)}</div></article>`;
   }
   return `${head}<div class="tl">${html}</div>`;
@@ -104,6 +108,7 @@ export function openComposer(taskId, editId = null) {
       <button type="button" class="pvbtn" data-act="md-preview" aria-pressed="false">미리보기</button></div>
     <textarea class="in mdin" id="lgBody" name="body" rows="7" placeholder="요점만 짧게. 마크다운 사용 가능 (## 제목, **굵게**, - 글머리, - [ ] 체크)">${l ? esc(l.body) : ''}</textarea>
     <div class="md mdprev" id="lgPrev" hidden></div>
+    ${l ? `<p class="hint">${esc(stampText(l))}</p>` : ''}
     <p class="hint">이력은 암호화되지 않습니다. 계정·고객사 네트워크 상세 같은 민감 정보는 넣지 마세요. <span class="cnt2" id="lgCount">0자</span></p>
     <div class="btns"><button type="button" class="btn" data-act="close-dlg">취소</button><button type="submit" class="btn primary">${l ? '저장' : '추가'}</button></div>
   </form>`);
