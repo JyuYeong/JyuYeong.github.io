@@ -1,8 +1,9 @@
 // 시작과 사용자 동작 처리
 import * as S from './store.js';
-import { st, DEFAULT_Q, DEFAULT_TIME, STATUS_LABEL, loadPrefs, savePrefs, persist, liveTasks, taskById, selTask, onSaved } from './state.js';
+import { st, DEFAULT_Q, DEFAULT_TIME, STATUS_LABEL, loadPrefs, savePrefs, persist, persistLogs, liveTasks, taskById, selTask, onSaved } from './state.js';
 import { $, esc, ic, stIcon, wide, toast, dlg, openDlg, dlgIs, setDlgBody, openMenu, armed, copyText, download } from './util.js';
 import { renderList, renderSide, renderPanel, renderTicker, renderAll, touch, refreshPanelValues, growArea, fitMemos, visibleTasks, tsFootHtml } from './render.js';
+import { openComposer, composer, refreshLinked, refreshSuggest, refreshDateNote, refreshCount, mdFormat, togglePreview, scrollToLog } from './logs.js';
 import { labelsHtml, refreshLabelsDlg, openLabels, openTopicsOf, newLabelDialog, newTopicDialog, filterHtml, settingsHtml, tickerHtml, TK_STATE } from './dialogs.js';
 
 const doc = () => st.doc;
@@ -38,8 +39,14 @@ function setStatus(t, v) {
   touch(t);
   if (st.ui.selectedId === t.id) renderPanel();
 }
+// 이력이 있는 날은 점을 지울 수 없고, 누르면 해당 이력으로 이동한다
+function openLogsAt(t, date) {
+  st.ui.selectedId = t.id; renderPanel(); renderList();
+  requestAnimationFrame(() => scrollToLog({ date }));
+}
 function markDay(t, date, fromPanel = false) {
   if (!t || date > S.todayKST()) return;
+  if (S.hasLogOn(t, date)) { openLogsAt(t, date); return; }
   const on = S.toggleMarked(t, date);
   let msg = '';
   if (on && t.status === 'todo') { t.status = 'in_progress'; t.completed_at = null; msg = '상태를 “진행 중”으로 바꿨습니다'; }
@@ -282,9 +289,27 @@ document.addEventListener('click', async e => {
       break;
     }
     case 'toggle-showactive': st.ui.showActive = !st.ui.showActive; savePrefs(); renderList(); setDlgBody(settingsHtml(), '[data-act="toggle-showactive"]'); break;
-    case 'export-json': download(`tm2-core-${S.todayKST().replaceAll('-', '')}.json`, JSON.stringify(doc(), null, 2)); break;
+    case 'export-json': download(`tm2-backup-${S.todayKST().replaceAll('-', '')}.json`, JSON.stringify({ core: doc(), logs: st.logs }, null, 2)); break;
     case 'wipe': if (armed(el, '정말 삭제합니다 — 한 번 더 누르세요')) { await S.clearAll(); location.reload(); } break;
     case 'close-dlg': dlg.close(); break;
+
+    // 작업 이력
+    case 'log-new': if (cur) openComposer(cur.id); break;
+    case 'log-menu': { const l = S.logById(st.logs, id); if (l && cur) logMenu(el, l); break; }
+    case 'log-undo': {
+      const [lid, tid] = id.split('|');
+      const l = st.logs.logs.find(x => x.id === lid);
+      if (!l) break;
+      if (tid) { if (!l.task_ids.includes(tid)) l.task_ids.push(tid); }
+      l.deleted_at = null; l.updated_at = now();
+      S.indexLogs(st.logs); persistLogs(); renderList(); renderPanel();
+      $('#toast').hidden = true;
+      break;
+    }
+    case 'lg-link': if (!composer.taskIds.includes(id)) composer.taskIds.push(id); composer.query = ''; $('#lgSearch').value = ''; refreshLinked(); $('#lgSearch').focus(); break;
+    case 'lg-unlink': if (composer.taskIds.length > 1) { composer.taskIds = composer.taskIds.filter(x => x !== id); refreshLinked(); } break;
+    case 'md-h': case 'md-b': case 'md-li': case 'md-cb': case 'md-code': mdFormat(act.slice(3)); break;
+    case 'md-preview': togglePreview(el); break;
     case 'sync-click': openDlg('settings', '설정', settingsHtml()); break;
   }
 });
@@ -310,6 +335,8 @@ document.addEventListener('input', e => {
   }
 });
 document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && e.target.id === 'lgBody') { e.preventDefault(); $('#logForm')?.requestSubmit(); return; }
+  if (e.key === 'Enter' && e.target.id === 'lgSearch') { e.preventDefault(); $('#lgSug .sug')?.click(); return; }
   if (e.key === 'Enter' && e.target.matches?.('#f-title, #f-memo')) { e.preventDefault(); e.target.blur(); }
 });
 document.addEventListener('change', e => {
@@ -360,14 +387,53 @@ dlg.addEventListener('change', e => {
   }
 });
 dlg.addEventListener('input', e => {
+  if (e.target.id === 'lgSearch') { composer.query = e.target.value; refreshSuggest(); return; }
+  if (e.target.id === 'lgBody') { refreshCount(); return; }
+  if (e.target.id === 'lgDate') { refreshDateNote(); return; }
   if (e.target.id !== 'q-text') return;
   st.q.text = e.target.value.trim(); savePrefs(); renderList();
   const b = dlg.querySelector('[data-act=close-dlg].primary');
   if (b) b.textContent = `${visibleTasks().length}건 보기`;
 });
+function saveLog(f) {
+  const fd = new FormData(f);
+  const body = String(fd.get('body') || '').replace(/\s+$/, '');
+  const date = String(fd.get('work_date') || '');
+  if (!body.trim()) { toast('내용을 입력하세요'); $('#lgBody')?.focus(); return; }
+  if (!date || date > S.todayKST()) { toast('작업일은 오늘 이전이어야 합니다'); return; }
+  const ids = composer.taskIds.filter(id => taskById(id));
+  if (!ids.length) { toast('연결할 Task가 없습니다'); return; }
+  let l = composer.editId ? S.logById(st.logs, composer.editId) : null;
+  if (l) S.updateLog(st.logs, l, { body, work_date: date, task_ids: ids });
+  else l = S.createLog(st.logs, { task_ids: ids, work_date: date, body });
+  // 대기 중인 Task에 처음 이력을 남기면 진행 중으로
+  const moved = ids.map(taskById).filter(t => t.status === 'todo');
+  moved.forEach(t => { t.status = 'in_progress'; t.completed_at = null; t.updated_at = now(); });
+  if (moved.length) persist();
+  persistLogs();
+  dlg.close();
+  renderList(); renderPanel();
+  requestAnimationFrame(() => scrollToLog({ id: l.id }));
+  toast(moved.length ? `저장했습니다 · ${moved.length > 1 ? `Task ${moved.length}건을` : '상태를'} “진행 중”으로 바꿨습니다` : (ids.length > 1 ? `Task ${ids.length}건에 저장했습니다` : '저장했습니다'));
+}
+function logMenu(anchor, l) {
+  const t = selTask();
+  let armedDel = false;
+  openMenu(anchor, () => [
+    { label: '수정', onPick: () => openComposer(t.id, l.id) },
+    ...(l.task_ids.length > 1 ? [{ label: '이 Task에서만 빼기', note: `다른 Task ${l.task_ids.length - 1}건에는 남습니다`, onPick: () => { S.detachLog(st.logs, l, t.id); persistLogs(); renderList(); renderPanel(); toast('이 Task에서 뺐습니다', { act: 'log-undo', id: l.id + '|' + t.id, label: '실행 취소' }); } }] : []),
+    { label: armedDel ? '한 번 더 누르면 삭제' : '이력 삭제', armed: armedDel, note: l.task_ids.length > 1 && armedDel ? `연결된 Task ${l.task_ids.length}건 모두에서 사라집니다` : '', onPick: () => {
+      if (!armedDel) { armedDel = true; return 'keep'; }
+      S.deleteLog(st.logs, l); persistLogs(); renderList(); renderPanel();
+      toast('이력을 삭제했습니다', { act: 'log-undo', id: l.id, label: '실행 취소' });
+    } },
+  ]);
+}
+
 dlg.addEventListener('submit', e => {
   e.preventDefault();
   const f = e.target;
+  if (f.id === 'logForm') { saveLog(f); return; }
   const fd = new FormData(f);
   if (f.id === 'tkForm') {
     if (S.createTicker(doc(), fd.get('text'))) { persist(); renderTicker(); refreshTickerDlg('#tkForm input'); }
@@ -425,6 +491,7 @@ new ResizeObserver(es => {
 // ---------- 시작 ----------
 (async function init() {
   st.doc = await S.load();
+  st.logs = await S.loadLogs();
   loadPrefs();
   renderAll();
   renderSyncLabel();
@@ -432,5 +499,5 @@ new ResizeObserver(es => {
   setInterval(() => { renderList(); renderSide(); renderTicker(); }, 60000);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { renderTicker(); renderList(); } });
 })();
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && st.doc) persist(true); });
-addEventListener('pagehide', () => { if (st.doc) persist(true); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && st.doc) { persist(true); persistLogs(true); } });
+addEventListener('pagehide', () => { if (st.doc) { persist(true); persistLogs(true); } });

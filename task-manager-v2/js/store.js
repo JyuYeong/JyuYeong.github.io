@@ -5,6 +5,7 @@
 const DB_NAME = 'task-manager-v2'; // v1('task-manager')과 같은 출처라 이름을 반드시 다르게 둔다
 const STORE = 'kv';
 const KEY = 'core';
+const LKEY = 'logs';
 const ID_CHARS = '23456789abcdefghjkmnpqrstuvwxyz';
 export const PALETTE = ['#4F7CAC', '#B5651D', '#5E8C61', '#8A5FB0', '#C2547A', '#3E8E8E', '#A38B2D', '#7A7F8C', '#D0743C', '#2F6FD6'];
 const URGENCY_RANK = { urgent: 0, high: 1, medium: 2, low: 3 };
@@ -209,10 +210,11 @@ export function wouldCycle(doc, taskId, predId) {
 }
 
 // ---------- 날짜별 체크 ----------
-// 손댄 날 = marked_days(직접 찍은 날). V2에서 작업 이력의 작업일이 더해진다
+// 손댄 날 = marked_days(직접 찍은 날) ∪ 작업 이력의 작업일
 export const DC_MAX_DAYS = 120;
 export const dayCheckOn = t => !!t.day_check && !!t.start_date && !!t.due_date && t.start_date <= t.due_date;
-export const isWorked = (t, date) => t.marked_days.includes(date);
+export const hasLogOn = (t, date) => !!logIdx.get(t.id)?.has(date);
+export const isWorked = (t, date) => t.marked_days.includes(date) || hasLogOn(t, date);
 export function toggleMarked(t, date) {
   const set = new Set(t.marked_days);
   const on = !set.has(date);
@@ -229,7 +231,11 @@ export function dcRange(t, today = todayKST()) {
   return { start: t.start_date, due: t.due_date, end };
 }
 export const isOver = (t, date) => !!t.due_date && date > t.due_date;
-export function workedIn(t, from, to) { return t.marked_days.filter(d => d >= from && d <= to); }
+export function workedIn(t, from, to) {
+  const set = new Set(t.marked_days);
+  logIdx.get(t.id)?.forEach((_, d) => set.add(d));
+  return [...set].filter(d => d >= from && d <= to).sort();
+}
 // 요약: { text, warn }
 export function dayCheckSummary(t, today = todayKST()) {
   const r = dcRange(t, today);
@@ -296,6 +302,56 @@ export function tickerState(k, now = nowKST()) {
   return 'on';
 }
 
+// ---------- 작업 이력 ----------
+// 별도 문서 { schema: 'tm2-logs', logs: [{ id, task_ids, work_date, body, ... }] } (V3에서 월별 파일로 나눈다)
+export const LOG_SCHEMA = 'tm2-logs';
+export const LOG_SOFT_LIMIT = 2000;
+export const emptyLogs = () => ({ schema: LOG_SCHEMA, version: VERSION, updated_at: nowIso(), logs: [] });
+let logIdx = new Map(); // taskId → Map(작업일 → 개수)
+export function indexLogs(ld) {
+  logIdx = new Map();
+  for (const l of ld.logs) {
+    if (l.deleted_at) continue;
+    for (const tid of l.task_ids) {
+      if (!logIdx.has(tid)) logIdx.set(tid, new Map());
+      const m = logIdx.get(tid);
+      m.set(l.work_date, (m.get(l.work_date) || 0) + 1);
+    }
+  }
+}
+export const compareLogs = (a, b) => (a.work_date !== b.work_date ? (a.work_date < b.work_date ? 1 : -1) : a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0);
+export const logById = (ld, id) => ld.logs.find(l => l.id === id && !l.deleted_at) || null;
+export const logsOfTask = (ld, taskId) => ld.logs.filter(l => !l.deleted_at && l.task_ids.includes(taskId)).sort(compareLogs);
+export const logCount = taskId => { let n = 0; logIdx.get(taskId)?.forEach(c => { n += c; }); return n; };
+export const lastLogDate = taskId => { let d = ''; logIdx.get(taskId)?.forEach((_, k) => { if (k > d) d = k; }); return d; };
+export function createLog(ld, { task_ids, work_date, body }) {
+  const ts = nowIso();
+  const l = { id: uniqueId('L-', ld.logs), task_ids: [...new Set(task_ids)], work_date, body: String(body || ''), created_at: ts, updated_at: ts, deleted_at: null };
+  ld.logs.push(l);
+  indexLogs(ld);
+  return l;
+}
+export function updateLog(ld, l, patch) {
+  Object.assign(l, patch, { updated_at: nowIso() });
+  if (patch.task_ids) l.task_ids = [...new Set(patch.task_ids)];
+  indexLogs(ld);
+  return l;
+}
+// 이 Task에서만 빼기: 연결된 Task가 하나뿐이면 이력 자체를 지운다
+export function detachLog(ld, l, taskId) {
+  if (l.task_ids.length <= 1) { l.deleted_at = nowIso(); l.updated_at = l.deleted_at; }
+  else { l.task_ids = l.task_ids.filter(x => x !== taskId); l.updated_at = nowIso(); }
+  indexLogs(ld);
+}
+export function deleteLog(ld, l) { l.deleted_at = nowIso(); l.updated_at = l.deleted_at; indexLogs(ld); }
+export function normalizeLogs(ld) {
+  const d = { ...emptyLogs(), ...ld };
+  if (!Array.isArray(d.logs)) d.logs = [];
+  const cut = new Date(Date.now() - PURGE_DAYS * 86400000).toISOString();
+  d.logs = d.logs.filter(l => (!l.deleted_at || l.deleted_at > cut) && Array.isArray(l.task_ids) && l.work_date);
+  return d;
+}
+
 // ---------- 문서 정리 ----------
 // 빠진 필드를 채우고, 30일 지난 삭제 항목을 실제로 지운다
 export function normalize(doc) {
@@ -342,8 +398,24 @@ export async function save(doc) {
   catch { storageOk = false; }
   return storageOk;
 }
+let memLogs = null;
+export async function loadLogs() {
+  let ld = null;
+  try { const d = await tx('readonly', s => s.get(LKEY)); if (d && d.schema === LOG_SCHEMA) ld = normalizeLogs(d); }
+  catch { storageOk = false; }
+  ld = ld || memLogs || emptyLogs();
+  indexLogs(ld);
+  return ld;
+}
+export async function saveLogs(ld) {
+  ld.updated_at = nowIso();
+  memLogs = ld;
+  try { await tx('readwrite', s => s.put(JSON.parse(JSON.stringify(ld)), LKEY)); storageOk = true; }
+  catch { storageOk = false; }
+  return storageOk;
+}
 export async function clearAll() {
-  mem = null;
-  try { await tx('readwrite', s => s.delete(KEY)); } catch { /* 무시 */ }
+  mem = null; memLogs = null;
+  try { await tx('readwrite', s => { s.delete(LKEY); return s.delete(KEY); }); } catch { /* 무시 */ }
 }
 export { stamp, live };

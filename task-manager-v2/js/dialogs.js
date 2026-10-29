@@ -4,7 +4,7 @@ import { st, liveTasks, STATUS_LABEL, URG_LABEL, SORT_LABEL, GROUP_LABEL, DUE_LA
 import { esc, ic, openDlg, dlgIs, setDlgBody } from './util.js';
 import { visibleTasks, byCreated } from './render.js';
 
-export const APP_VERSION = 'v2 · V1';
+export const APP_VERSION = 'v2 · V2';
 const doc = () => st.doc;
 const live = arr => arr.filter(x => !x.deleted_at);
 const seg = (field, options, cur) => `<div class="seg xs" role="group">${options.map(([v, l]) => `<button type="button" data-act="set-${field}" data-v="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div>`;

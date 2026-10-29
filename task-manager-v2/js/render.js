@@ -2,6 +2,8 @@
 import * as S from './store.js';
 import { st, liveTasks, taskById, selTask, persist, STATUS_LABEL, URG_LABEL, URG_RANK, SORT_LABEL, GROUP_LABEL } from './state.js';
 import { $, esc, ic, stIcon, wide } from './util.js';
+import { timelineHtml } from './logs.js';
+import { plainMd } from './md.js';
 
 const doc = () => st.doc;
 const labels = () => S.liveLabels(doc());
@@ -37,7 +39,7 @@ function matches(t, now) {
     if (!q.topics.some(id => (id === 'none' ? !tps.length : tps.includes(id)))) return false;
   }
   if (q.text) {
-    const hay = [t.title, t.memo, t.id, ...S.taskTopics(doc(), t).map(g => g.name), ...S.taskLabels(doc(), t).map(l => l.name)].join(' ').toLowerCase();
+    const hay = [t.title, t.memo, t.id, ...S.taskTopics(doc(), t).map(g => g.name), ...S.taskLabels(doc(), t).map(l => l.name), ...S.logsOfTask(st.logs, t.id).map(l => plainMd(l.body))].join(' ').toLowerCase();
     if (!hay.includes(q.text.toLowerCase())) return false;
   }
   if (q.due !== 'any') {
@@ -138,6 +140,8 @@ function datesHtml(t, now) {
     parts.push(`<span class="d${late ? ' late' : !S.isFin(t) ? ' due' : ''}">${t.due_time ? ic('clock') : ''}마감 ${md(t.due_date)}${t.due_time ? ' ' + t.due_time : ''}${suffix}</span>`);
   }
   if (t.start_date) parts.push(`<span class="d">시작 ${md(t.start_date)}</span>`);
+  const n = S.logCount(t.id);
+  if (n) parts.push(`<span class="d lg" title="작업 이력 ${n}건">${ic('note')}이력 ${n} · 최근 ${md(S.lastLogDate(t.id))}</span>`);
   return parts.length ? `<div class="dates">${parts.join('')}</div>` : '';
 }
 const successorsOf = t => liveTasks().filter(s => s.blocked_by === t.id);
@@ -188,10 +192,11 @@ function dayCalHtml(t, now) {
   const cells = days.map((d, i) => {
     const w = S.isWorked(t, d);
     const label = (i === 0 || d.endsWith('-01')) ? `${+d.slice(5, 7)}/${+d.slice(8)}` : `${+d.slice(8)}`;
-    return `<button type="button" class="cd${w ? ' on' : ''}${S.isOver(t, d) ? ' over' : ''}${d === today ? ' today' : ''}" data-act="dc-day" data-d="${d}" aria-pressed="${w}" aria-label="${md(d)}${d === today ? ' 오늘' : ''} ${w ? '손댐' : '안 함'}${S.isOver(t, d) ? ' 마감 초과' : ''}"${d > today ? ' disabled' : ''}><i></i><b>${label}</b></button>`;
+    const lg = S.hasLogOn(t, d);
+    return `<button type="button" class="cd${w ? ' on' : ''}${lg ? ' lg' : ''}${S.isOver(t, d) ? ' over' : ''}${d === today ? ' today' : ''}" data-act="dc-day" data-d="${d}" aria-pressed="${w}" aria-label="${md(d)}${d === today ? ' 오늘' : ''} ${lg ? '이력 있음, 눌러서 이력 보기' : w ? '손댐' : '안 함'}${S.isOver(t, d) ? ' 마감 초과' : ''}"${d > today ? ' disabled' : ''}><i></i><b>${label}</b></button>`;
   }).join('');
   return `<div class="dcal">${WD.map(x => `<span class="wd">${x}</span>`).join('')}${'<span></span>'.repeat(S.weekdayOf(days[0]))}${cells}</div>
-    <p class="hint">${days.length}일 중 ${S.workedIn(t, days[0], days[days.length - 1]).length}일 손댐${cut ? ` · 마지막 ${S.DC_MAX_DAYS}일만 표시` : ''}. 빨간 칸은 마감 이후입니다.</p>`;
+    <p class="hint">${days.length}일 중 ${S.workedIn(t, days[0], days[days.length - 1]).length}일 손댐${cut ? ` · 마지막 ${S.DC_MAX_DAYS}일만 표시` : ''}. 빨간 칸은 마감 이후, 밑줄 칸은 이력이 있는 날(눌러서 이동)입니다.</p>`;
 }
 function activeSectionHtml(items, now) {
   if (!st.ui.showActive) return '';
@@ -347,8 +352,10 @@ function panelHtml(t) {
       ${t.day_check && st.ui.calOpen ? dayCalHtml(t, now) : ''}
       ${t.day_check && !S.dayCheckOn(t) && !st.ui.calOpen ? '<p class="hint">시작일과 마감일을 모두 넣으면 표시됩니다.</p>' : ''}
     </section>
+
+    <section class="psec" id="logSec">${timelineHtml(t)}</section>
   </div>
-  <div class="pf"><p class="tsfoot" id="tsFoot">${tsFootHtml(t)}</p><button class="del" data-act="delete" data-id="${t.id}">${ic('trash')}삭제</button></div>`;
+  <div class="pf"><p class="tsfoot" id="tsFoot">${tsFootHtml(t)}</p><button class="del" data-act="delete" data-id="${t.id}">${ic('trash')}삭제</button><button class="btn sm primary addlog" data-act="log-new">${ic('plus')}이력</button></div>`;
 }
 export function growArea(el) { if (!el) return; el.style.height = 'auto'; el.style.height = el.scrollHeight + 2 + 'px'; }
 export function renderPanel(focusSel) {

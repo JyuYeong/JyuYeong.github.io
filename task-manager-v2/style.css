@@ -494,3 +494,100 @@ select.in{appearance:auto}
 .bar .btn{white-space:nowrap;flex:none}
 .sortlbl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bar .sw{white-space:nowrap;flex:none}
+
+/* ======================================================================
+   v2 (V2): 작업 이력 — 타임라인, 입력 시트, 마크다운
+   ====================================================================== */
+.dates .d.lg{color:var(--ink2)}
+.sh0{font-size:12.5px;font-weight:700;color:var(--muted);display:inline-flex;align-items:center;gap:6px;height:30px}
+.sh0 .n{font-weight:600;color:var(--ink2)}
+#logSec .shrow .btn{margin-left:auto}
+.btn.xs{height:30px;padding:0 10px;font-size:12.5px;border-radius:8px;gap:4px}
+.btn.xs .ic{width:14px;height:14px}
+.icbtn.xs{width:28px;height:28px;border-radius:8px}
+.icbtn.xs .ic{width:16px;height:16px}
+.pf .addlog{margin-left:0;height:36px;border-radius:10px}
+.pf .addlog .ic{width:15px;height:15px}
+
+/* 타임라인: 카드 없이 날짜 구분선 + 본문 */
+.tl{display:flex;flex-direction:column}
+.tld{display:flex;align-items:center;gap:8px;margin:10px 0 4px;font-size:12px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums}
+.tld:first-child{margin-top:2px}
+.tld::after{content:"";flex:1;height:1px;background:var(--line)}
+.tld .ov{font-style:normal;font-weight:700;color:var(--dc-over);font-size:11.5px}
+.tle{padding:4px 0 8px 10px;border-left:2px solid var(--line);margin-left:2px;border-radius:0 6px 6px 0;transition:background .6s}
+.tle + .tle{border-top:1px dashed var(--line);padding-top:6px}
+.tle.flash{background:var(--accent-weak)}
+.tlm{display:flex;align-items:center;gap:6px;min-height:24px;font-size:11.5px;color:var(--muted)}
+.tlm time{font-variant-numeric:tabular-nums;flex:none}
+.tlm .icbtn{margin-left:auto;color:var(--muted)}
+.lk{display:inline-flex;align-items:center;gap:4px;min-width:0;overflow:hidden}
+.lk .ic{width:12px;height:12px;flex:none}
+.lk button{border:0;background:var(--soft);color:var(--ink2);border-radius:5px;height:20px;padding:0 6px;font-size:11.5px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lk .more{height:20px}
+
+/* 마크다운 본문 (튀지 않게: 제목도 본문보다 조금 큰 정도) */
+.md{font-size:13.5px;line-height:1.55;color:var(--ink);overflow-wrap:anywhere}
+.md>:first-child{margin-top:0}
+.md>:last-child{margin-bottom:0}
+.md p{margin:0 0 4px}
+.md h3,.md h4,.md h5,.md h6{margin:6px 0 2px;line-height:1.35;font-weight:700}
+.md h3{font-size:15px}
+.md h4{font-size:14.5px}
+.md h5,.md h6{font-size:14px;color:var(--ink2)}
+.md ul,.md ol{margin:2px 0 4px;padding-left:20px}
+.md li{margin:1px 0}
+.md li.task{list-style:none;margin-left:-18px}
+.md .cbx{display:inline-block;width:13px;height:13px;border:1.5px solid var(--muted);border-radius:3px;margin-right:6px;vertical-align:-2px}
+.md .cbx.on{background:var(--ok);border-color:var(--ok);background-image:linear-gradient(45deg,transparent 45%,#fff 45%,#fff 55%,transparent 55%)}
+.md code{font:12.5px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--soft);border-radius:4px;padding:1px 4px}
+.md pre{margin:4px 0;padding:8px 10px;background:var(--soft);border-radius:8px;overflow-x:auto}
+.md pre code{background:none;padding:0;font-size:12px;white-space:pre}
+.md blockquote{margin:4px 0;padding:2px 10px;border-left:3px solid var(--line2);color:var(--ink2)}
+.md hr{border:0;border-top:1px solid var(--line);margin:8px 0}
+.md a{color:var(--accent-ink)}
+
+/* 날짜별 체크 달력: 이력이 있는 날 */
+.cd.lg b{text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:2px;text-decoration-color:var(--dc-on)}
+.cd.lg.over b{text-decoration-color:var(--dc-over)}
+
+/* 입력 시트 */
+dialog[data-kind="log"]{width:min(560px,calc(100vw - 24px))}
+@media (max-width:699px){
+  dialog[data-kind="log"]{margin:auto 0 0;width:100%;max-width:none;border-radius:20px 20px 0 0;max-height:94dvh}
+}
+#logForm{display:flex;flex-direction:column;gap:10px}
+.lgrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lgrow .fl{margin:0}
+.lgrow .in{width:160px}
+.lgnote{font-size:12px;color:var(--dc-over);font-weight:600}
+.lktasks{display:flex;flex-wrap:wrap;gap:6px}
+.lkc{display:inline-flex;align-items:center;gap:6px;max-width:100%;height:32px;padding:0 4px 0 8px;border:1px solid var(--line2);border-radius:8px;font-size:13px}
+.lkc .st{width:16px;height:16px}
+.lkc .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lkc button{width:24px;height:24px;border:0;background:none;border-radius:6px;color:var(--muted);display:flex;align-items:center;justify-content:center;flex:none}
+.lkc button .ic{width:14px;height:14px}
+.lgsug{display:flex;flex-direction:column;gap:2px}
+.lgsug:empty{display:none}
+.sug{display:flex;align-items:center;gap:8px;min-height:38px;padding:0 8px;border:0;border-radius:8px;background:var(--soft);text-align:left;font-size:13.5px}
+.sug:hover{background:var(--hover)}
+.sug .st{width:16px;height:16px}
+.sug .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sug .sub{font:500 11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--muted)}
+.mdbar{display:flex;align-items:center;gap:4px}
+.mdbar button{min-width:36px;height:32px;padding:0 8px;border:1px solid var(--line2);border-radius:8px;background:var(--surface);font-size:13px;color:var(--ink2)}
+.mdbar button:disabled{opacity:.4}
+.mdbar .pvbtn{margin-left:auto}
+.mdbar .pvbtn[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.mdin{height:auto;min-height:150px;padding:10px 12px;font-size:14.5px;line-height:1.5;resize:vertical;font-family:inherit}
+.mdprev{min-height:150px;padding:10px 12px;border:1px dashed var(--line2);border-radius:12px}
+.cnt2{float:right;font-variant-numeric:tabular-nums}
+.cnt2.warn{color:var(--danger);font-weight:700}
+.btns{display:flex;gap:8px}
+.btns .btn{flex:1}
+@media (prefers-reduced-motion:reduce){.tle{transition:none}}
+.mi .ml small{color:var(--muted);font-weight:500}
+.mi.armed .ml small{color:var(--danger);font-weight:600}
+.md .cbx{position:relative}
+.md .cbx.on{background:var(--ok);border-color:var(--ok);background-image:none}
+.md .cbx.on::after{content:"";position:absolute;left:3px;top:0;width:3px;height:7px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}

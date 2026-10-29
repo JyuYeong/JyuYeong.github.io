@@ -14,6 +14,7 @@ export const DEFAULT_Q = { text: '', statuses: [], urgencies: [], labels: [], la
 // filter: 사이드바에서 고른 라벨 ('all' | 'none' | 라벨 ID). 새로 열면 항상 'all'
 export const st = {
   doc: null,
+  logs: null, // 작업 이력 문서 { schema: 'tm2-logs', logs: [] }
   ui: { filter: 'all', selectedId: null, viewsOpen: true, railOpen: false, activeOpen: true, showActive: true, propsOpen: true, calOpen: false },
   q: { ...DEFAULT_Q },
 };
@@ -40,6 +41,13 @@ export function persist(now = false) {
   const run = async () => { await S.save(st.doc); afterSave.forEach(f => f()); };
   if (now) return run();
   saveTimer = setTimeout(run, 250);
+}
+let logTimer;
+export function persistLogs(now = false) {
+  clearTimeout(logTimer);
+  const run = async () => { await S.saveLogs(st.logs); afterSave.forEach(f => f()); };
+  if (now) return run();
+  logTimer = setTimeout(run, 250);
 }
 
 // 자주 쓰는 조회
