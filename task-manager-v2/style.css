@@ -803,3 +803,30 @@ button.tv{border:0;background:none;padding:0;text-align:left;cursor:pointer}
 .dc.ev::after{content:"";position:absolute;top:-4px;left:50%;margin-left:3px;width:6px;height:6px;border-radius:50%;background:var(--ev);box-shadow:0 0 0 1.5px var(--surface)}
 .cd{position:relative}
 .cd.ev::after{content:"";position:absolute;top:4px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--ev)}
+
+/* ======================================================================
+   상세 보기 방식: 오른쪽 패널(폭 조절) / 가운데 창 / 아래 창
+   ====================================================================== */
+.pgrip{display:none}
+@media (min-width:700px){
+  /* 오른쪽 패널: 폭은 --pw (드래그로 조절, 기기별 저장) */
+  body.dm-side .panel,body.dm-side .panel>*{width:var(--pw,440px)}
+  body.dm-side.no-sel .panel{width:0}
+  body.dm-side:not(.no-sel) .pgrip{display:block;flex:none;width:9px;margin:0 -4px 0 -5px;position:relative;z-index:6;cursor:col-resize;touch-action:none}
+  .pgrip::after{content:"";position:absolute;top:0;bottom:0;left:4px;width:1px;background:transparent;transition:background .12s}
+  .pgrip:hover::after,.pgrip:focus-visible::after,body.resizing .pgrip::after{background:var(--accent);width:3px;left:3px}
+  body.resizing{cursor:col-resize;user-select:none;-webkit-user-select:none}
+  body.resizing .panel{transition:none}
+  /* 가운데 창 */
+  body.dm-center .panel{position:fixed;left:50%;top:50%;right:auto;bottom:auto;width:min(780px,calc(100vw - 48px));height:min(92dvh,980px);border:0;border-radius:16px;box-shadow:0 12px 40px var(--shadow2);z-index:20;overflow:hidden;opacity:0;visibility:hidden;transform:translate(-50%,-48%);transition:opacity .15s ease,transform .15s ease,visibility 0s .15s}
+  body.dm-center .panel>*{width:auto}
+  body.dm-center.no-sel .panel{width:min(780px,calc(100vw - 48px))}
+  body.dm-center.sheet-open .panel{opacity:1;visibility:visible;transform:translate(-50%,-50%);transition:opacity .15s ease,transform .15s ease}
+  body.dm-center.sheet-open .backdrop{display:block}
+  body.dm-center .pb{padding-left:24px;padding-right:24px}
+  body.dm-center .ph{padding-left:16px;padding-right:12px}
+  body.dm-center .pf{padding-left:24px;padding-right:24px}
+}
+/* 휴대폰: 아래 창을 거의 전체 높이로 */
+body.dm-sheet .panel{height:94dvh}
+@media (prefers-reduced-motion:reduce){body.dm-center .panel,body.dm-center.sheet-open .panel{transition:none}}

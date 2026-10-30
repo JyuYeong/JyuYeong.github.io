@@ -15,7 +15,7 @@ export const DEFAULT_Q = { text: '', statuses: [], urgencies: [], labels: [], la
 export const st = {
   doc: null,
   logs: null, // 작업 이력 문서 { schema: 'tm2-logs', logs: [] }
-  ui: { filter: 'all', selectedId: null, viewsOpen: true, railOpen: false, activeOpen: true, showActive: true, propsOpen: true, calOpen: false, page: { kind: 'list', id: null } },
+  ui: { filter: 'all', selectedId: null, viewsOpen: true, railOpen: false, activeOpen: true, showActive: true, propsOpen: true, calOpen: false, page: { kind: 'list', id: null }, detailMode: 'auto', panelW: 0 },
   q: { ...DEFAULT_Q },
 };
 
@@ -26,11 +26,13 @@ export function loadPrefs() {
     if (!p) return;
     st.q = { ...DEFAULT_Q, ...p.q };
     for (const k of ['viewsOpen', 'activeOpen', 'showActive', 'propsOpen', 'calOpen']) if (typeof p[k] === 'boolean') st.ui[k] = p[k];
+    if (['auto', 'center', 'side'].includes(p.detailMode)) st.ui.detailMode = p.detailMode;
+    if (Number.isFinite(p.panelW)) st.ui.panelW = p.panelW;
   } catch { /* 무시 */ }
 }
 export function savePrefs() {
-  const { viewsOpen, activeOpen, showActive, propsOpen, calOpen } = st.ui;
-  try { localStorage.setItem(PREF_KEY, JSON.stringify({ q: st.q, viewsOpen, activeOpen, showActive, propsOpen, calOpen })); } catch { /* 무시 */ }
+  const { viewsOpen, activeOpen, showActive, propsOpen, calOpen, detailMode, panelW } = st.ui;
+  try { localStorage.setItem(PREF_KEY, JSON.stringify({ q: st.q, viewsOpen, activeOpen, showActive, propsOpen, calOpen, detailMode, panelW })); } catch { /* 무시 */ }
 }
 
 let saveTimer;
@@ -48,6 +50,26 @@ export function persistLogs(now = false) {
   const run = async () => { await S.saveLogs(st.logs); afterSave.forEach(f => f()); };
   if (now) return run();
   logTimer = setTimeout(run, 250);
+}
+
+// ---------- 상세 보기 방식 ----------
+// 'side'(오른쪽 패널) | 'center'(가운데 창) | 'sheet'(휴대폰: 아래에서 올라오는 시트)
+// 자동: 화면 폭(CSS px)이 SIDE_MIN 이상이면 오른쪽, 700 이상이면 가운데, 그보다 좁으면 시트. 기기별로 고정할 수 있다
+export const SIDE_MIN = 1280;
+export const PANEL_DEFAULT_W = 440, PANEL_MIN_W = 360;
+export function detailMode() {
+  if (innerWidth < 700) return 'sheet';
+  const p = st.ui.detailMode;
+  if (p === 'side' || p === 'center') return p;
+  return innerWidth >= SIDE_MIN ? 'side' : 'center';
+}
+export const panelMax = () => Math.round(innerWidth * 0.6);
+export const clampPanelW = w => Math.max(PANEL_MIN_W, Math.min(panelMax(), Math.round(w || PANEL_DEFAULT_W)));
+export function applyDetailMode() {
+  const m = detailMode(), b = document.body;
+  for (const k of ['side', 'center', 'sheet']) b.classList.toggle('dm-' + k, m === k);
+  document.documentElement.style.setProperty('--pw', clampPanelW(st.ui.panelW) + 'px');
+  return m;
 }
 
 // 자주 쓰는 조회

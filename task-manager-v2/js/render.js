@@ -1,6 +1,6 @@
 // 화면 그리기: 사이드바·칩, 목록(카드·진행 기간 중 묶음), 상세 패널, 티커
 import * as S from './store.js';
-import { st, liveTasks, taskById, selTask, persist, STATUS_LABEL, URG_LABEL, URG_RANK, SORT_LABEL, GROUP_LABEL } from './state.js';
+import { st, applyDetailMode, liveTasks, taskById, selTask, persist, STATUS_LABEL, URG_LABEL, URG_RANK, SORT_LABEL, GROUP_LABEL } from './state.js';
 import { $, esc, ic, stIcon, wide } from './util.js';
 import { timelineHtml } from './logs.js';
 import { plainMd } from './md.js';
@@ -374,7 +374,7 @@ export function renderPanel(focusSel) {
   const nb = $('#panel .pb');
   if (nb && t) { nb.dataset.id = t.id; nb.scrollTop = scroll; }
   requestAnimationFrame(() => { growArea($('#f-memo')); growArea($('#f-title')); });
-  document.body.classList.toggle('sheet-open', !!t && !wide());
+  document.body.classList.toggle('sheet-open', !!t && applyDetailMode() !== 'side');
   document.body.classList.toggle('no-sel', !t);
   if (focusSel) $(`#panel ${focusSel}`)?.focus();
 }

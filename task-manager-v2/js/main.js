@@ -3,7 +3,7 @@ import * as S from './store.js';
 import * as Sync from './sync.js';
 import * as Vault from './vault.js';
 import { initVaultUi } from './vaultui.js';
-import { st, DEFAULT_Q, DEFAULT_TIME, STATUS_LABEL, loadPrefs, savePrefs, persist, persistLogs, liveTasks, taskById, selTask, onSaved } from './state.js';
+import { st, applyDetailMode, clampPanelW, PANEL_DEFAULT_W, DEFAULT_Q, DEFAULT_TIME, STATUS_LABEL, loadPrefs, savePrefs, persist, persistLogs, liveTasks, taskById, selTask, onSaved } from './state.js';
 import { $, esc, ic, stIcon, wide, toast, dlg, openDlg, dlgIs, setDlgBody, openMenu, armed, copyText, download } from './util.js';
 import { renderList, renderSide, renderPanel, renderTicker, renderAll, touch, refreshPanelValues, growArea, fitMemos, visibleTasks, tsFootHtml } from './render.js';
 import { openComposer, composer, setKind, tl, refreshLinked, refreshSuggest, refreshDateNote, refreshCount, mdFormat, togglePreview, scrollToLog } from './logs.js';
@@ -341,6 +341,7 @@ document.addEventListener('click', async e => {
       }
       break;
     }
+    case 'set-dmode': st.ui.detailMode = el.dataset.v; savePrefs(); renderPanel(); setDlgBody(settingsHtml(), `[data-act="set-dmode"][data-v="${el.dataset.v}"]`); break;
     case 'toggle-showactive': st.ui.showActive = !st.ui.showActive; savePrefs(); renderList(); setDlgBody(settingsHtml(), '[data-act="toggle-showactive"]'); break;
     case 'export-json': download(`tm2-backup-${S.todayKST().replaceAll('-', '')}.json`, JSON.stringify({ core: doc(), logs: st.logs }, null, 2)); break;
     case 'wipe': if (armed(el, '정말 삭제합니다 — 한 번 더 누르세요')) { Sync.resetSeen(); await S.clearAll(); location.reload(); } break;
@@ -393,6 +394,8 @@ document.addEventListener('input', e => {
   }
 });
 document.addEventListener('keydown', e => {
+  // 가운데 창·시트로 연 상세는 Esc로 닫는다 (다이얼로그·메뉴가 열려 있으면 그쪽이 먼저)
+  if (e.key === 'Escape' && document.body.classList.contains('sheet-open') && !dlg.open && !document.querySelector('#menuRoot .pop')) { closePanel(); return; }
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && e.target.id === 'lgBody') { e.preventDefault(); $('#logForm')?.requestSubmit(); return; }
   if (e.key === 'Enter' && e.target.id === 'lgSearch') { e.preventDefault(); $('#lgSug .sug')?.click(); return; }
   if (e.key === 'Enter' && e.target.matches?.('#f-title, #f-memo')) { e.preventDefault(); e.target.blur(); }
@@ -538,11 +541,35 @@ $('#quick').addEventListener('submit', e => {
   else toast(`“${t.title}” 추가됨`, { act: 'open', id: t.id, label: '열기' });
 });
 
+// ---------- 오른쪽 패널 폭 조절 (마우스·터치 드래그, 두 번 누르면 기본 폭) ----------
+const grip = $('#pgrip');
+grip.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  grip.setPointerCapture(e.pointerId);
+  document.body.classList.add('resizing');
+  const move = ev => { st.ui.panelW = clampPanelW(innerWidth - ev.clientX); applyDetailMode(); };
+  const up = () => {
+    grip.removeEventListener('pointermove', move);
+    document.body.classList.remove('resizing');
+    savePrefs(); fitMemos();
+  };
+  grip.addEventListener('pointermove', move);
+  grip.addEventListener('pointerup', up, { once: true });
+  grip.addEventListener('pointercancel', up, { once: true });
+});
+grip.addEventListener('dblclick', () => { st.ui.panelW = PANEL_DEFAULT_W; applyDetailMode(); savePrefs(); fitMemos(); });
+grip.addEventListener('keydown', e => {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+  e.preventDefault();
+  st.ui.panelW = clampPanelW((st.ui.panelW || PANEL_DEFAULT_W) + (e.key === 'ArrowLeft' ? 24 : -24));
+  applyDetailMode(); savePrefs();
+});
+
 let tkResize, memoW = 0;
 addEventListener('resize', () => {
   const sz = $('#scrSize');
   if (sz) sz.textContent = `${innerWidth} × ${innerHeight}`;
-  document.body.classList.toggle('sheet-open', !!st.ui.selectedId && !wide());
+  document.body.classList.toggle('sheet-open', !!st.ui.selectedId && applyDetailMode() !== 'side');
   clearTimeout(tkResize);
   tkResize = setTimeout(() => renderTicker(), 200);
 });

@@ -1,11 +1,11 @@
 // 다이얼로그 내용: 라벨·주제 관리, 새 라벨·주제, 필터·정렬, 설정, 티커
 import * as S from './store.js';
-import { st, liveTasks, STATUS_LABEL, URG_LABEL, SORT_LABEL, GROUP_LABEL, DUE_LABEL } from './state.js';
+import { st, detailMode, SIDE_MIN, liveTasks, STATUS_LABEL, URG_LABEL, SORT_LABEL, GROUP_LABEL, DUE_LABEL } from './state.js';
 import { esc, ic, openDlg, dlgIs, setDlgBody } from './util.js';
 import { visibleTasks, byCreated } from './render.js';
 import * as Sync from './sync.js';
 
-export const APP_VERSION = 'v2 · V5';
+export const APP_VERSION = 'v2 · V5.2';
 const doc = () => st.doc;
 const live = arr => arr.filter(x => !x.deleted_at);
 const seg = (field, options, cur) => `<div class="seg xs" role="group">${options.map(([v, l]) => `<button type="button" data-act="set-${field}" data-v="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div>`;
@@ -127,7 +127,9 @@ export function settingsHtml() {
     <div class="kv"><span>저장 위치</span><span>${S.storageOk ? '이 기기 (IndexedDB)' : '저장 불가 (임시)'}</span></div>
     <div class="kv"><span>브라우저 보존 보장</span><span>${persisted === undefined ? '확인 중' : persisted ? '예' : '아니오'}</span></div>
     ${syncHtml()}
-    <div class="kv"><span>화면 크기 (CSS px)</span><span id="scrSize">${innerWidth} × ${innerHeight}</span></div>
+    <div class="kv"><span>화면 크기 (CSS px)</span><span id="scrSize">${innerWidth} × ${innerHeight} · 배율 ${devicePixelRatio}</span></div>
+    <div class="fsec"><span class="fl">Task 상세 보기 방식 (이 기기)</span>${seg('dmode', [['auto', '자동'], ['center', '가운데 창'], ['side', '오른쪽 패널']], st.ui.detailMode)}
+      <p class="hint">자동: 화면 폭이 ${SIDE_MIN}px 이상이면 오른쪽 패널, 그보다 좁으면 가운데 창. 폭 700px 미만(휴대폰)은 항상 아래에서 올라오는 창입니다. 지금: ${{ side: '오른쪽 패널', center: '가운데 창', sheet: '아래 창' }[detailMode()]}. 오른쪽 패널은 경계를 끌어 폭을 바꿀 수 있습니다.</p></div>
     <button type="button" class="sw" role="switch" data-act="toggle-showactive" aria-checked="${st.ui.showActive}"><i></i>목록 맨 위에 “진행 기간 중” 묶음 표시 (이 기기)</button>
     <div class="kv"><span>Task / 라벨 / 주제</span><span>${liveTasks().length}건 / ${S.liveLabels(doc()).length}개 / ${live(doc().topics).length}개</span></div>
     <button class="btn" data-act="labels">라벨·주제 관리</button>
