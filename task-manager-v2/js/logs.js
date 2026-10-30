@@ -62,13 +62,38 @@ export const composer = { editId: null, taskIds: [], preview: false, query: '', 
 function linkedChipsHtml() {
   return composer.taskIds.map(taskById).filter(Boolean).map(t => `<span class="lkc">${stIcon(S.displayStatus(t))}<span class="t">${esc(t.title)}</span>${composer.taskIds.length > 1 ? `<button type="button" data-act="lg-unlink" data-id="${t.id}" aria-label="${esc(t.title)} 연결 해제">${ic('x')}</button>` : ''}</span>`).join('');
 }
+// 연결할 Task 찾기: 검색어를 띄어 쓴 단어마다 나눠, 모든 단어가 어딘가에 들어 있으면 찾는다 (순서·위치 무관, 공백·대소문자 무시, 한글 초성 가능)
+// 찾는 곳: 제목, Task ID, 메모, 라벨, 주제, 이력 본문. 제목에서 찾은 것을 먼저 보여 준다
+const CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+const CHO_SET = new Set([...CHO]);
+const norm = x => String(x ?? '').normalize('NFC').toLowerCase().replace(/[\s\-_.]+/g, '');
+const cho = x => [...norm(x)].map(ch => { const c = ch.charCodeAt(0); return c >= 0xAC00 && c <= 0xD7A3 ? CHO[Math.floor((c - 0xAC00) / 588)] : ch; }).join('');
+const hit = (t, text) => !!text && (norm(text).includes(t) || ([...t].every(ch => CHO_SET.has(ch)) && cho(text).includes(t)));
+function findTasks(query) {
+  const terms = String(query || '').normalize('NFC').trim().split(/\s+/).map(norm).filter(Boolean);
+  if (!terms.length) return [];
+  const out = [];
+  for (const t of liveTasks()) {
+    if (composer.taskIds.includes(t.id)) continue;
+    const title = [t.title, t.id];
+    const other = [t.memo, ...S.taskLabels(st.doc, t).map(l => l.name), ...S.taskTopics(st.doc, t).map(g => g.name), ...S.logsOfTask(st.logs, t.id).map(l => l.body)];
+    let score = 0, ok = true;
+    for (const term of terms) {
+      if (title.some(x => hit(term, x))) continue;
+      if (other.some(x => hit(term, x))) { score += 1; continue; }
+      ok = false; break;
+    }
+    if (ok) out.push({ t, score, where: score ? '메모·라벨·주제·이력에서 찾음' : '' });
+  }
+  return out.sort((a, b) => a.score - b.score || (S.isFin(a.t) !== S.isFin(b.t) ? (S.isFin(a.t) ? 1 : -1) : S.compareDefault(a.t, b.t)));
+}
 function suggestHtml() {
-  const q = composer.query.trim().toLowerCase();
-  if (!q) return '';
-  const list = liveTasks().filter(t => !composer.taskIds.includes(t.id) && `${t.title} ${t.id}`.toLowerCase().includes(q))
-    .sort((a, b) => (S.isFin(a) !== S.isFin(b) ? (S.isFin(a) ? 1 : -1) : S.compareDefault(a, b))).slice(0, 8);
-  if (!list.length) return '<p class="hint">맞는 Task가 없습니다.</p>';
-  return list.map(t => `<button type="button" class="sug" data-act="lg-link" data-id="${t.id}">${stIcon(S.displayStatus(t))}<span class="t">${esc(t.title)}</span><span class="sub">${t.id}</span></button>`).join('');
+  if (!composer.query.trim()) return '';
+  const all = findTasks(composer.query);
+  if (!all.length) return '<p class="hint">맞는 Task가 없습니다. 단어를 줄이거나 다른 단어로 찾아보세요.</p>';
+  const list = all.slice(0, 10);
+  return list.map(({ t, where }) => `<button type="button" class="sug" data-act="lg-link" data-id="${t.id}">${stIcon(S.displayStatus(t))}<span class="t">${esc(t.title)}${where ? `<small>${where}</small>` : ''}</span><span class="sub">${t.id}</span></button>`).join('')
+    + (all.length > list.length ? `<p class="hint">${all.length}건 중 10건만 표시. 단어를 더 넣어 좁혀 보세요.</p>` : '');
 }
 export const refreshLinked = () => { const a = $('#lgLinked'); if (a) a.innerHTML = linkedChipsHtml(); const b = $('#lgSug'); if (b) b.innerHTML = suggestHtml(); refreshDateNote(); };
 export const refreshSuggest = () => { const b = $('#lgSug'); if (b) b.innerHTML = suggestHtml(); };
@@ -102,7 +127,7 @@ export function openComposer(taskId, editId = null) {
     <div class="seg xs lgkind" role="group" aria-label="이력 종류">${Object.entries(S.LOG_KINDS).map(([v, lb]) => `<button type="button" data-act="lg-kind" data-v="${v}" aria-pressed="${composer.kind === v}">${v === 'work' ? '작업 · 내가 한 일' : '발생 · 일어난 일'}</button>`).join('')}</div>
     <div class="lgrow"><label class="fl" for="lgDate" id="lgDateLbl">${composer.kind === 'event' ? '발생일' : '작업일'}</label><input class="in xs" type="date" id="lgDate" name="work_date" max="${today}" value="${l ? l.work_date : today}" required><span class="lgnote" id="lgDateNote"></span></div>
     <div class="fsec"><span class="fl">연결 Task</span><div class="lktasks" id="lgLinked">${linkedChipsHtml()}</div>
-      <input class="in xs" type="search" id="lgSearch" placeholder="다른 Task도 연결 (제목·ID 검색)" aria-label="연결할 Task 검색"><div class="lgsug" id="lgSug"></div></div>
+      <input class="in xs" type="search" id="lgSearch" placeholder="다른 Task도 연결 (기억나는 단어 아무거나: 제목·메모·라벨·주제·이력)" aria-label="연결할 Task 검색"><div class="lgsug" id="lgSug"></div></div>
     <div class="mdbar" role="toolbar" aria-label="서식">
       <button type="button" data-act="md-h" title="제목">H</button><button type="button" data-act="md-b" title="굵게"><b>B</b></button><button type="button" data-act="md-li" title="글머리">•</button><button type="button" data-act="md-cb" title="체크 항목">☐</button><button type="button" data-act="md-code" title="코드">&lt;/&gt;</button>
       <button type="button" class="pvbtn" data-act="md-preview" aria-pressed="false">미리보기</button></div>

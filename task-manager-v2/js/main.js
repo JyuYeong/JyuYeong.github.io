@@ -442,7 +442,10 @@ dlg.addEventListener('change', e => {
     if (!k) return;
     const v = e.target.value;
     if (d.kf === 'text') { const s = v.trim().slice(0, 120); if (!s) { e.target.value = k.text; return; } k.text = s; }
-    else if (['expire_date', 'daily_from', 'daily_to'].includes(d.kf)) k[d.kf] = v || null;
+    else if (['start_date', 'expire_date', 'daily_from', 'daily_to'].includes(d.kf)) {
+      k[d.kf] = v || null;
+      if (k.start_date && k.expire_date && k.start_date > k.expire_date) toast('시작일이 종료일보다 늦어 이 문장은 표시되지 않습니다');
+    }
     else return;
     k.updated_at = now(); persist(); renderTicker(); updateTickerRow(k);
   }

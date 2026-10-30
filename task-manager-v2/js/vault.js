@@ -151,7 +151,6 @@ export const encrypt = doc => C.encryptDoc(V.dek, doc, V.meta.vault_id);
 
 // ---------- 업무 트리 ----------
 // 노드: { id: 'W-…', parent_id, type: 'folder' | 'field', name, value, masked, label_ids, … }
-export const QUICK_KEYS = [{ key: 'ID', masked: false }, { key: 'PW', masked: true }, { key: 'IP', masked: false }, { key: 'URL', masked: false }, { key: 'PK', masked: true }];
 const sameName = (a, b) => String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
 const nodes = () => live(V.doc?.nodes);
 export const nodeById = id => (id ? nodes().find(n => n.id === id) || null : null);
@@ -184,7 +183,7 @@ export function createNode(parentId, type, fields = {}) {
   if (nameTaken(parentId, type, name)) return { error: type === 'folder' ? '같은 이름의 폴더가 이미 있습니다' : '같은 key가 이미 있습니다' };
   const ts = nowIso();
   const node = { id: uniqueId('W-', V.doc.nodes), parent_id: parentId || null, type, name, label_ids: [], created_at: ts, updated_at: ts, deleted_at: null };
-  if (type === 'field') { node.value = String(fields.value ?? ''); node.masked = fields.masked !== false; }
+  if (type === 'field') { node.value = String(fields.value ?? ''); node.masked = fields.masked === true; } // 가리기는 기본 해제
   V.doc.nodes.push(node);
   return { node };
 }
@@ -247,6 +246,63 @@ export function createPath(parentId, text) {
   }
   return { node: nodeById(pid), created };
 }
+// 여러 폴더 한 번에: 줄바꿈이나 쉼표로 나눈 각 줄을 경로('a/b/c')로 보고 만든다
+export const splitLines = text => String(text || '').split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+export function planPaths(parentId, text) {
+  const lines = splitLines(text);
+  if (!lines.length) return { lines, plans: [], newCount: 0, error: '폴더 이름을 입력하세요' };
+  const plans = lines.map(l => planPath(parentId, l));
+  const bad = plans.find(p => p.error);
+  // 같은 입력 안에서 겹치는 새 폴더는 한 번만 센다
+  const seen = new Set();
+  let newCount = 0;
+  for (const p of plans) {
+    const base = p.existing.map(n => n.name.toLowerCase()).join('/');
+    p.toCreate.forEach((name, i) => { const key = base + '/' + p.toCreate.slice(0, i + 1).join('/').toLowerCase(); if (!seen.has(key)) { seen.add(key); newCount++; } });
+  }
+  return { lines, plans, newCount, error: bad ? bad.error : null };
+}
+// 성공하면 { leaves: [각 줄의 마지막 폴더], created: 새로 만든 개수 }
+export function createPaths(parentId, text) {
+  const lines = splitLines(text);
+  if (!lines.length) return { error: '폴더 이름을 입력하세요' };
+  const leaves = [];
+  let created = 0;
+  for (const l of lines) {
+    const r = createPath(parentId, l);
+    if (r.error) return { error: `${l}: ${r.error}` };
+    leaves.push(r.node); created += r.created.length;
+  }
+  return { leaves, created };
+}
+// 항목 복사: 고른 항목(key·가리기, 원하면 값까지)을 대상 폴더들에 넣는다. 대상에 같은 key가 있으면 건너뛴다
+export function copyFields(fieldIds, targetIds, { withValues = false } = {}) {
+  const src = fieldIds.map(nodeById).filter(n => n && n.type === 'field');
+  let added = 0, skipped = 0;
+  for (const tid of targetIds) {
+    if (!nodeById(tid)) continue;
+    for (const f of src) {
+      if (f.parent_id === tid) { skipped++; continue; }
+      const r = createNode(tid, 'field', { name: f.name, value: withValues ? f.value : '', masked: f.masked });
+      if (r.error) skipped++; else added++;
+    }
+  }
+  return { added, skipped };
+}
+// 항목이 있는 폴더 목록 (경로 이름과 함께): 항목 구조를 가져올 원본 고르기용
+export function foldersWithFields() {
+  return nodes().filter(n => n.type === 'folder' && childrenOf(n.id).fields.length)
+    .map(n => ({ node: n, path: pathOf(n.id).map(p => p.name).join(' › '), count: childrenOf(n.id).fields.length }))
+    .sort((a, b) => cmpText(a.path, b.path));
+}
+// 트리 순서대로 모든 폴더 (깊이 포함)
+export function allFolders() {
+  const out = [];
+  const walk = (pid, d) => { for (const f of childrenOf(pid).folders) { out.push({ node: f, depth: d }); walk(f.id, d + 1); } };
+  walk(null, 0);
+  return out;
+}
+
 // 라벨: 폴더에만 붙인다. 상위 폴더의 라벨은 하위 전체에 상속
 export function inheritedLabels(node) { return [...new Set(pathOf(node.id).slice(0, -1).flatMap(n => n.label_ids || []))]; }
 export function effectiveLabels(node) { return [...new Set([...inheritedLabels(node), ...(node.label_ids || [])])]; }

@@ -299,7 +299,7 @@ export function createTicker(doc, text) {
   text = String(text || '').trim().slice(0, 120);
   if (!text) return null;
   const ts = nowIso();
-  const k = { id: uniqueId('K-', doc.ticker), text, enabled: true, level: 'normal', expire_date: null, daily_from: null, daily_to: null, created_at: ts, updated_at: ts, deleted_at: null };
+  const k = { id: uniqueId('K-', doc.ticker), text, enabled: true, level: 'normal', start_date: null, expire_date: null, daily_from: null, daily_to: null, created_at: ts, updated_at: ts, deleted_at: null };
   doc.ticker.push(k);
   return k;
 }
@@ -307,8 +307,10 @@ export function inDailyWindow(time, from, to) {
   if (!from || !to || from === to) return true;
   return from < to ? time >= from && time < to : time >= from || time < to;
 }
+// 'scheduled'(시작일 전) | 'expired'(종료일 지남) | 'off' | 'outside'(매일 시간대 밖) | 'on'
 export function tickerState(k, now = nowKST()) {
   if (k.expire_date && now.date > k.expire_date) return 'expired';
+  if (k.start_date && now.date < k.start_date) return 'scheduled';
   if (!k.enabled) return 'off';
   if (!inDailyWindow(now.time, k.daily_from, k.daily_to)) return 'outside';
   return 'on';

@@ -5,7 +5,7 @@ import { esc, ic, openDlg, dlgIs, setDlgBody } from './util.js';
 import { visibleTasks, byCreated } from './render.js';
 import * as Sync from './sync.js';
 
-export const APP_VERSION = 'v2 · V5.2';
+export const APP_VERSION = 'v2 · V5.3';
 const doc = () => st.doc;
 const live = arr => arr.filter(x => !x.deleted_at);
 const seg = (field, options, cur) => `<div class="seg xs" role="group">${options.map(([v, l]) => `<button type="button" data-act="set-${field}" data-v="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div>`;
@@ -139,7 +139,7 @@ export function settingsHtml() {
 }
 
 // ---------- 티커 ----------
-export const TK_STATE = { on: ['표시 중', 'on'], off: ['꺼짐', ''], outside: ['시간대 외', ''], expired: ['만료', 'exp'] };
+export const TK_STATE = { on: ['표시 중', 'on'], off: ['꺼짐', ''], outside: ['시간대 외', ''], scheduled: ['시작 전', ''], expired: ['만료', 'exp'] };
 export function tickerHtml() {
   const set = S.tickerSettings(doc());
   const now = S.nowKST();
@@ -150,12 +150,12 @@ export function tickerHtml() {
     const fld = (f, type, label, extra = '') => `<input class="in" type="${type}" data-kid="${k.id}" data-kf="${f}" value="${esc(k[f] || '')}" aria-label="${label}"${extra}>`;
     return `<div class="tkrow${k.enabled ? '' : ' off'}" data-row="${k.id}">
       <div class="r1"><button type="button" class="sw" role="switch" data-act="tk-toggle" data-id="${k.id}" aria-checked="${k.enabled}" aria-label="띠에 표시"><i></i></button>${fld('text', 'text', '문장', ' maxlength="120"')}<button type="button" class="icbtn sm" data-act="tk-del" data-id="${k.id}" aria-label="문장 삭제">${ic('trash')}</button></div>
-      <div class="r2"><span class="tw">강조<span class="lvseg" role="group" aria-label="강조">${Object.entries(S.TICKER_LEVELS).map(([v, l]) => `<button type="button" data-act="tk-level" data-id="${k.id}" data-v="${v}" aria-pressed="${S.tickerLevel(k) === v}" class="lv-${v}">${l}</button>`).join('')}</span></span><span class="tw">종료일${fld('expire_date', 'date', '표시 종료일')}</span><span class="tw">매일${fld('daily_from', 'time', '표시 시작 시각')}~${fld('daily_to', 'time', '표시 종료 시각')}</span><span class="tkst ${cls}">${lbl}</span></div>
+      <div class="r2"><span class="tw">강조<span class="lvseg" role="group" aria-label="강조">${Object.entries(S.TICKER_LEVELS).map(([v, l]) => `<button type="button" data-act="tk-level" data-id="${k.id}" data-v="${v}" aria-pressed="${S.tickerLevel(k) === v}" class="lv-${v}">${l}</button>`).join('')}</span></span><span class="tw">기간${fld('start_date', 'date', '표시 시작일')}~${fld('expire_date', 'date', '표시 종료일')}</span><span class="tw">매일${fld('daily_from', 'time', '표시 시작 시각')}~${fld('daily_to', 'time', '표시 종료 시각')}</span><span class="tkst ${cls}">${lbl}</span></div>
     </div>`;
   }).join('');
   return `<div class="fsec"><span class="fl">띠 색상</span>${seg('tkcolor', Object.entries(S.TICKER_COLORS).map(([v, l]) => [v, sw(v) + l]), set.color)}</div>
     <div class="fsec"><span class="fl">띠 위치</span>${seg('tkpos', [['top', '위'], ['bottom', '아래']], set.position)}</div>
     <div class="fsec"><span class="fl">문장</span><div class="tkset">${rows || '<p class="hint">아직 문장이 없습니다.</p>'}</div></div>
     <form class="prow" id="tkForm" autocomplete="off"><input class="in" name="text" maxlength="120" placeholder="새 문장" aria-label="새 문장" required><button class="btn primary" type="submit">추가</button></form>
-    <p class="hint">켜 둔 문장만 띠에 흐릅니다. 종료일이 지나면 "만료"로 남습니다. 매일 시간대는 시작과 끝을 모두 넣어야 적용되고, 시작이 끝보다 늦으면 자정을 넘깁니다. 띠를 누르면 일시정지합니다.</p>`;
+    <p class="hint">켜 둔 문장만 띠에 흐릅니다. 기간은 시작일·종료일 중 하나만 넣어도 되고, 시작일 전에는 "시작 전", 종료일이 지나면 "만료"로 남습니다. 매일 시간대는 시작과 끝을 모두 넣어야 적용되고, 시작이 끝보다 늦으면 자정을 넘깁니다. 띠를 누르면 일시정지합니다.</p>`;
 }

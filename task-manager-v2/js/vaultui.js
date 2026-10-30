@@ -156,29 +156,56 @@ export function vaultLabelSection(labelId) {
 }
 
 // ---------- 다이얼로그 ----------
-function fieldDialog({ id = null, parent = null, name = '', value = '', masked = true } = {}) {
+function fieldDialog({ id = null, parent = null, name = '', value = '', masked = false } = {}) {
   const n = id ? Vault.nodeById(id) : null;
   if (n) ({ name, value, masked } = n), parent = n.parent_id;
   const where = ['업무 정보', ...Vault.pathOf(parent).map(p => p.name)].join(' › ');
   const rows = Math.min(10, Math.max(2, (value.match(/\n/g) || []).length + 1));
   openDlg('vfield', n ? '항목 편집' : '항목 추가', `<form id="vFieldForm" data-id="${id || ''}" data-parent="${parent || ''}" autocomplete="off" class="vform">
     <p class="hint">위치: ${esc(where)}</p>
-    <label class="fl" for="vfKey">key</label><input class="in" id="vfKey" maxlength="100" value="${esc(name)}" autocapitalize="off" spellcheck="false" placeholder="예: ID, PW, IP, privateKey" required>
-    ${n ? '' : `<div class="chips2">${Vault.QUICK_KEYS.map(q => `<button type="button" class="chip" data-act="v-quick" data-k="${q.key}" data-m="${q.masked ? 1 : 0}">${q.key}</button>`).join('')}</div>`}
+    <label class="fl" for="vfKey">key</label><input class="in" id="vfKey" maxlength="100" value="${esc(name)}" autocapitalize="off" spellcheck="false" placeholder="예: ID, PW, IP, privateKey" enterkeyhint="next" required>
     <label class="fl" for="vfVal">값</label><textarea class="in mono" id="vfVal" rows="${rows}" maxlength="20000" spellcheck="false" autocapitalize="off">${esc(value)}</textarea>
     <label class="ck"><input type="checkbox" id="vfMask"${masked ? ' checked' : ''}> 값 가리기 (눌러야 보이고, 검색에서 빠짐)</label>
     <div class="btns">${n ? `<button type="button" class="btn" data-act="v-move" data-id="${n.id}">이동</button><button type="button" class="btn danger" data-act="v-del-node" data-id="${n.id}">삭제</button>` : `<button type="submit" class="btn" name="more" value="1">계속 추가</button>`}<button type="submit" class="btn primary">저장</button></div>
   </form>`);
   $(n ? '#vfVal' : '#vfKey').focus();
 }
+const FOLDER_HINT = '한 줄에 하나씩(또는 쉼표로 나눠) 쓰면 여러 폴더를 한 번에 만듭니다. /로 이어 쓰면 여러 단계. 이미 있는 폴더는 그대로 씁니다';
 function folderPrompt(parentId, renameId = null) {
   const node = renameId ? Vault.nodeById(renameId) : null;
   const base = Vault.nodeById(parentId);
-  openDlg('vfolder', node ? '폴더 이름 바꾸기' : base ? `‘${base.name}’ 안에 새 폴더` : '새 폴더', `<form id="vFolderForm" data-parent="${parentId || ''}" data-id="${renameId || ''}" autocomplete="off" class="vform">
-    <label class="fl" for="vfName">폴더 이름</label><input class="in" id="vfName" maxlength="${node ? 100 : 600}" value="${esc(node?.name || '')}" placeholder="${node ? '' : '예: 삼성증권/HIWARE/ServerEDR'}" required>
-    <p class="hint" id="vfHint">${node ? '' : '/로 이어 쓰면 여러 단계를 한 번에 만듭니다. 이미 있는 폴더는 그대로 씁니다'}</p>
-    <div class="btns"><button type="button" class="btn" data-act="close-dlg">취소</button><button type="submit" class="btn primary">${node ? '바꾸기' : '만들기'}</button></div></form>`);
+  if (node) {
+    openDlg('vfolder', '폴더 이름 바꾸기', `<form id="vFolderForm" data-parent="${parentId || ''}" data-id="${renameId}" autocomplete="off" class="vform">
+      <label class="fl" for="vfName">폴더 이름</label><input class="in" id="vfName" maxlength="100" value="${esc(node.name)}" required>
+      <div class="btns"><button type="button" class="btn" data-act="close-dlg">취소</button><button type="submit" class="btn primary">바꾸기</button></div></form>`);
+    $('#vfName').focus();
+    return;
+  }
+  const srcs = Vault.foldersWithFields();
+  openDlg('vfolder', base ? `‘${base.name}’ 안에 새 폴더` : '새 폴더', `<form id="vFolderForm" data-parent="${parentId || ''}" data-id="" autocomplete="off" class="vform">
+    <label class="fl" for="vfName">폴더 이름</label><textarea class="in mono" id="vfName" rows="4" maxlength="5000" spellcheck="false" placeholder="예:&#10;serverB&#10;serverC&#10;삼성증권/HIWARE/ServerEDR" required></textarea>
+    <p class="hint" id="vfHint">${FOLDER_HINT}</p>
+    ${srcs.length ? `<label class="fl" for="vfTpl">항목 구조 가져오기 (선택)</label><select class="in" id="vfTpl"><option value="">가져오지 않음</option>${srcs.map(x => `<option value="${x.node.id}">${esc(x.path)} (항목 ${x.count})</option>`).join('')}</select>
+      <p class="hint">고른 폴더의 key와 가리기 설정을 새로 만든 각 폴더에 넣습니다. 값은 비워 둡니다.</p>` : ''}
+    <div class="btns"><button type="button" class="btn" data-act="close-dlg">취소</button><button type="submit" class="btn primary">만들기</button></div></form>`);
   $('#vfName').focus();
+}
+// 항목을 다른 폴더(여러 개)로 복사
+function copyDialog(folderId) {
+  const f = Vault.nodeById(folderId);
+  const fields = Vault.childrenOf(folderId).fields;
+  if (!fields.length) { toast('이 폴더에는 복사할 항목이 없습니다'); return; }
+  const targets = Vault.allFolders().filter(x => x.node.id !== folderId);
+  if (!targets.length) { toast('붙여 넣을 다른 폴더가 없습니다'); return; }
+  const sibling = x => x.node.parent_id === f.parent_id;
+  openDlg('vcopy', `‘${f.name}’ 항목 복사`, `<form id="vCopyForm" data-src="${folderId}" autocomplete="off" class="vform">
+    <span class="fl">복사할 항목</span>
+    <div class="ckbox">${fields.map(x => `<label class="ck"><input type="checkbox" name="fid" value="${x.id}" checked><span class="mono">${esc(x.name)}</span>${x.masked ? ic('lock', '', 'kl') : ''}</label>`).join('')}</div>
+    <label class="ck"><input type="checkbox" id="vcVals"> 값도 함께 복사 (끄면 key와 가리기 설정만)</label>
+    <div class="flrow"><span class="fl">붙여 넣을 폴더</span><button type="button" class="lnk" data-act="v-copy-sib">같은 위치 폴더 모두 선택</button></div>
+    <div class="treebox">${targets.map(x => `<label class="ck" style="padding-left:${6 + x.depth * 18}px"><input type="checkbox" name="tid" value="${x.node.id}" data-sib="${sibling(x) ? 1 : 0}">${ic('folder')}<span>${esc(x.node.name)}</span></label>`).join('')}</div>
+    <p class="hint">대상 폴더에 같은 key가 이미 있으면 건너뜁니다.</p>
+    <div class="btns"><button type="button" class="btn" data-act="close-dlg">취소</button><button type="submit" class="btn primary">복사</button></div></form>`);
 }
 function memoDialog(id = null) {
   const m = id ? Vault.memoById(id) : null;
@@ -307,8 +334,8 @@ document.addEventListener('submit', async e => {
     save();
     if (parent) vu.open.add(parent);
     vu.hl = r.node.id;
-    if (e.submitter?.name === 'more') { // 계속 추가: key·값을 비우고 가리기 설정은 그대로
-      $('#vfKey').value = ''; $('#vfVal').value = ''; $('#vfKey').focus();
+    if (e.submitter?.name === 'more') { // 계속 추가: key·값을 비우고 가리기는 다시 해제 (가릴 값은 나중에 골라서)
+      $('#vfKey').value = ''; $('#vfVal').value = ''; $('#vfMask').checked = false; $('#vfKey').focus();
       toast(`‘${r.node.name}’ 저장됨`); refresh(); return;
     }
     dlg.close(); refresh();
@@ -318,13 +345,26 @@ document.addEventListener('submit', async e => {
       const r = Vault.updateNode(Vault.nodeById(id), { name: val('#vfName') });
       if (r.error) { toast(r.error); return; }
     } else {
-      const r = Vault.createPath(parent, val('#vfName'));
+      const r = Vault.createPaths(parent, val('#vfName'));
       if (r.error) { toast(r.error); return; }
-      for (const n of Vault.pathOf(r.node.id)) vu.open.add(n.id);
-      vu.hl = r.node.id;
-      toast(r.created.length ? `폴더 ${r.created.length}개를 만들었습니다` : '이미 있는 폴더입니다');
+      const tpl = $('#vfTpl')?.value;
+      let copied = null;
+      if (tpl) copied = Vault.copyFields(Vault.childrenOf(tpl).fields.map(x => x.id), r.leaves.map(n => n.id).filter(x => x !== tpl));
+      for (const leaf of r.leaves) for (const n of Vault.pathOf(leaf.id)) vu.open.add(n.id);
+      if (tpl) r.leaves.forEach(n => vu.open.add(n.id));
+      vu.hl = r.leaves[r.leaves.length - 1]?.id || null;
+      toast((r.created ? `폴더 ${r.created}개를 만들었습니다` : '이미 있는 폴더입니다') + (copied ? ` · 항목 ${copied.added}개 추가${copied.skipped ? `, ${copied.skipped}개 건너뜀` : ''}` : ''));
     }
     save(); dlg.close(); refresh();
+  } else if (f.id === 'vCopyForm') {
+    const fids = [...f.querySelectorAll('input[name=fid]:checked')].map(x => x.value);
+    const tids = [...f.querySelectorAll('input[name=tid]:checked')].map(x => x.value);
+    if (!fids.length) { toast('복사할 항목을 고르세요'); return; }
+    if (!tids.length) { toast('붙여 넣을 폴더를 고르세요'); return; }
+    const r = Vault.copyFields(fids, tids, { withValues: $('#vcVals').checked });
+    tids.forEach(t => { for (const n of Vault.pathOf(t)) vu.open.add(n.id); });
+    save(); dlg.close(); refresh();
+    toast(`폴더 ${tids.length}개에 항목 ${r.added}개를 넣었습니다${r.skipped ? ` (같은 key ${r.skipped}개 건너뜀)` : ''}`);
   } else if (f.id === 'vMemoForm') {
     const r = Vault.saveMemo(f.dataset.id || null, { title: val('#vmTitle'), body: val('#vmBody'), label_ids: vu.memoLabels });
     if (r.error) { toast(r.error); return; }
@@ -340,14 +380,18 @@ document.addEventListener('submit', async e => {
     catch { toast('지금 마스터 비밀번호가 맞지 않습니다'); }
   }
 });
+// 항목 추가: key에서 Enter를 눌러도 값으로 넘어간다 (Tab도 바로 값으로)
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.id === 'vfKey' && !e.isComposing) { e.preventDefault(); $('#vfVal')?.focus(); }
+});
 // PIN 4자리를 다 넣으면 바로 열기
 document.addEventListener('input', e => {
   if (e.target.id === 'vPin' && /^\d{4}$/.test(e.target.value)) $('#vPinForm')?.requestSubmit();
   if (e.target.id === 'vQ') { vu.q = e.target.value; const pos = e.target.selectionStart; rerender(); const q = $('#vQ'); if (q) { q.focus(); q.setSelectionRange(pos, pos); } }
   if (e.target.id === 'vfName' && !$('#vFolderForm')?.dataset.id) {
-    const p = Vault.planPath($('#vFolderForm').dataset.parent || null, e.target.value);
-    $('#vfHint').textContent = !p.segments.length ? '/로 이어 쓰면 여러 단계를 한 번에 만듭니다. 이미 있는 폴더는 그대로 씁니다'
-      : p.error || (!p.toCreate.length ? '이미 있는 폴더입니다' : `새로 만들 폴더 ${p.toCreate.length}개: ${p.toCreate.join(' › ')}${p.existing.length ? ` (기존 ${p.existing.map(n => n.name).join(' › ')} 아래)` : ''}`);
+    const p = Vault.planPaths($('#vFolderForm').dataset.parent || null, e.target.value);
+    $('#vfHint').textContent = !p.lines.length ? FOLDER_HINT
+      : p.error || (p.newCount ? `새로 만들 폴더 ${p.newCount}개 (${p.lines.length}줄)${p.lines.length === 1 && p.plans[0].toCreate.length ? `: ${p.plans[0].toCreate.join(' › ')}` : ''}` : '모두 이미 있는 폴더입니다');
   }
 });
 
@@ -371,7 +415,7 @@ document.addEventListener('click', async e => {
     case 'v-new-folder': folderPrompt(id || null); break;
     case 'v-new-field': fieldDialog({ parent: id || null }); break;
     case 'v-edit-field': fieldDialog({ id }); break;
-    case 'v-quick': $('#vfKey').value = el.dataset.k; $('#vfMask').checked = el.dataset.m === '1'; $('#vfVal').focus(); break;
+    case 'v-copy-sib': dlg.querySelectorAll('input[name=tid][data-sib="1"]').forEach(x => { x.checked = true; }); break;
     case 'v-folder-menu': {
       const f = Vault.nodeById(id);
       if (!f) break;
@@ -379,6 +423,7 @@ document.addEventListener('click', async e => {
       openMenu(el, [
         { label: '하위 폴더 만들기', icon: ic('folder'), onPick: () => folderPrompt(id) },
         { label: '항목 추가', icon: ic('plus'), onPick: () => fieldDialog({ parent: id }) },
+        ...(Vault.childrenOf(id).fields.length ? [{ label: '항목을 다른 폴더로 복사', icon: ic('copy'), onPick: () => copyDialog(id) }] : []),
         { label: '라벨', icon: ic('label'), note: Vault.inheritedLabels(f).length ? '상위에서 상속된 라벨은 여기서 뗄 수 없습니다' : '', onPick: () => setTimeout(() => { const anchor = $(`#vn-${id} [data-act="v-folder-menu"]`) || el; labelMenu(anchor, () => f.label_ids, lid => { Vault.toggleNodeLabel(f, lid); save(); rerender(); }, Vault.inheritedLabels(f)); }, 0) },
         { label: '이름 바꾸기', icon: ic('edit'), onPick: () => folderPrompt(f.parent_id, id) },
         { label: '이동', icon: ic('chevR'), onPick: () => moveDialog(f) },

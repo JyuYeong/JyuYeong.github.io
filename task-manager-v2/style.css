@@ -830,3 +830,10 @@ button.tv{border:0;background:none;padding:0;text-align:left;cursor:pointer}
 /* 휴대폰: 아래 창을 거의 전체 높이로 */
 body.dm-sheet .panel{height:94dvh}
 @media (prefers-reduced-motion:reduce){body.dm-center .panel,body.dm-center.sheet-open .panel{transition:none}}
+.sug .t small{display:block;font-size:11px;color:var(--muted);font-weight:400}
+.ckbox{display:flex;flex-direction:column;gap:0;padding:4px 8px;border:1px solid var(--line);border-radius:10px}
+.ckbox .ck,.treebox .ck{min-height:34px}
+.ckbox .ck .mono{font-size:13px}
+.ckbox .kl{width:12px;height:12px;color:var(--muted)}
+.treebox .ck .ic{width:15px;height:15px;color:var(--accent-ink)}
+#vfName{min-height:96px}
