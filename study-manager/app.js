@@ -1,7 +1,8 @@
-// Study Manager: 문장 등록·여러 줄 붙여넣기·목록·과목/단원/태그 분류·설정 (M1) / 학습 범위·조회 모드·문제 모드·학습 기록 (M2)
+// Study Manager: 문장 등록·여러 줄 붙여넣기·목록·과목/단원/태그 분류·설정 (M1) / 학습 범위·조회 모드·문제 모드·학습 기록 (M2) / Google Drive 동기화 (M3)
 import * as S from './store.js';
+import * as Sync from './sync.js';
 
-export const VERSION = 'M2';
+export const VERSION = 'M3';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -68,14 +69,49 @@ const armed = new Set(); // 분류 관리의 삭제 버튼: 한 번 누르면 �
 // ---------- 저장 ----------
 let saving = Promise.resolve();
 function persist() {
-  saving = saving.then(() => S.save(doc)).then(renderSaveLabel);
+  saving = saving.then(() => S.save(doc)).then(() => { renderSaveLabel(); Sync.schedule(); });
   return saving;
 }
+// 상단 상태 버튼: 저장·동기화 상태
+const SYNC_TEXT = { off: '사용 안 함', 'needs-auth': 'Google 로그인 필요', syncing: '동기화 중…', ok: '정상', offline: '오프라인', error: '오류' };
 function renderSaveLabel() {
   const el = $('#syncLabel');
   if (!el) return;
-  el.textContent = S.storageOk ? '이 기기에 저장됨' : '저장 실패 (브라우저 저장소 확인)';
-  el.className = 'sync' + (S.storageOk ? '' : ' warn');
+  const st = Sync.getState();
+  let [text, cls] = {
+    off: ['이 기기에 저장됨', ''],
+    'needs-auth': ['Google 로그인 필요', 'warn'],
+    syncing: ['동기화 중…', ''],
+    ok: [`동기화됨 ${st.lastSync ? st.lastSync.slice(-5) : ''}`, 'ok'],
+    offline: ['오프라인 · 이 기기에 저장됨', ''],
+    error: ['동기화 오류', 'warn'],
+  }[st.status] || ['', ''];
+  if (!S.storageOk) [text, cls] = ['저장 실패 (브라우저 저장소 확인)', 'warn'];
+  el.textContent = text;
+  el.className = 'sync ' + cls;
+  el.title = st.detail || (st.status === 'off' ? '설정에서 Google Drive 동기화를 켤 수 있습니다' : '누르면 지금 동기화');
+  const s2 = $('#syncState'); if (s2) s2.innerHTML = syncStateHtml();
+  const b2 = $('#syncBtns'); if (b2) b2.innerHTML = syncBtnsHtml();
+}
+const syncStateHtml = () => { const st = Sync.getState(); return `${SYNC_TEXT[st.status]}${st.lastSync ? ` · 마지막 ${esc(st.lastSync)}` : ''}${st.detail && st.status !== 'ok' ? `<br><span class="note">${esc(st.detail)}</span>` : ''}`; };
+const syncBtnsHtml = () => (Sync.signedIn()
+  ? `<button class="btn" data-act="sync-now">지금 동기화</button>${Sync.getState().status === 'needs-auth' ? '<button class="btn primary" data-act="sync-login">Google 로그인</button>' : ''}<button class="btn" data-act="sync-out">동기화 끄기</button>`
+  : '<button class="btn primary" data-act="sync-login">Google 로그인하고 동기화 켜기</button>');
+// 다른 기기에서 바뀐 내용이 합쳐졌을 때: 저장하고, 보고 있는 화면만 다시 그린다
+// (조회·문제 진행 중이면 화면을 건드리지 않고, 입력 중인 문장·커서는 유지)
+async function applyMerged(m) {
+  doc = S.normalizeDoc(m);
+  await S.save(doc);
+  if ($('#app').hidden) return;
+  if (dlg().open) return;
+  if ((ui.view === 'review' && RV.on) || (ui.view === 'quiz' && QZ.on)) return;
+  const a = document.activeElement, id = a?.id, sel = id && a.selectionStart != null ? [a.selectionStart, a.selectionEnd] : null;
+  if (ui.view === 'register' && ui.regSub === 'form') readTextAreas('page');
+  if (ui.view === 'list' && ui.listSub === 'list' && $('#lres')) { refreshList(); return; }
+  const sc = $('#view').scrollTop;
+  renderView();
+  $('#view').scrollTop = sc;
+  if (id) { const el = document.getElementById(id); if (el && el !== document.activeElement) { el.focus({ preventScroll: true }); if (sel) try { el.setSelectionRange(...sel); } catch { /* 무시 */ } } }
 }
 
 // ---------- 토스트 / 다이얼로그 ----------
@@ -886,9 +922,13 @@ function settingsHtml() {
     <div class="card"><h2>데이터</h2>
       <div class="kv"><span>문장</span><span>${all.length}개</span></div>
       <div class="kv"><span>과목 · 단원 · 태그</span><span>${S.subjectsOf(doc, { archived: true }).length} · ${S.live(doc.units).filter(u => u.parent_id).length} · ${S.tagsOf(doc).length}</span></div>
-      <div class="kv"><span>Google Drive 동기화</span><span>M3에서 제공</span></div>
       <div class="setrow"><button class="btn" data-act="export">JSON 내보내기</button><button class="btn" data-act="import">JSON 가져오기</button></div>
-      <p class="hint">동기화를 켜기 전까지 데이터는 이 기기 브라우저에만 저장됩니다. 가끔 내보내기로 백업해 두세요</p>
+    </div>
+    <div class="card"><h2>Google Drive 동기화</h2>
+      <div class="kv"><span>상태</span><span id="syncState">${syncStateHtml()}</span></div>
+      <div class="setrow" id="syncBtns">${syncBtnsHtml()}</div>
+      <p class="hint">Drive의 '11 Study Manager\\db' 폴더에 저장하고, 하루에 한 번 백업을 남깁니다(최근 14개). 다른 기기에서는 이 기기 데이터를 지운 뒤 처음 화면의 'Drive에 있는 데이터 불러오기'로 시작하세요</p>
+      <div class="setrow" style="margin-top:12px"><button class="btn danger" data-act="wipe">이 기기 데이터 지우기</button></div>
     </div>
     <p class="ver">Study Manager ${VERSION}</p>
   </div>`;
@@ -1112,6 +1152,11 @@ document.addEventListener('click', async e => {
       break;
     }
     case 'export': exportJson(); break;
+    case 'sync-login': await Sync.signIn(); renderSaveLabel(); break;
+    case 'sync-now': Sync.syncNow(); break;
+    case 'sync-out': if (await confirmDialog('동기화 끄기', '이 기기에서 Google 로그인을 끊고 동기화를 멈춥니다. 데이터는 이 기기와 Drive에 그대로 남습니다.', '끄기')) { Sync.signOut(); renderSaveLabel(); } break;
+    case 'wipe': await wipeDevice(); break;
+    case 'sync-click': if (Sync.signedIn()) Sync.syncNow(); else go('settings'); break;
     // ----- 학습 범위 -----
     case 'sc-unit': case 'sc-tag': case 'sc-none': case 'sc-star': case 'sc-clear': onScopeAct(act, id); break;
     case 'sess-opt': sessOptions(b.dataset.mode); break;
@@ -1230,14 +1275,68 @@ document.addEventListener('focusout', () => setTimeout(() => { if (!document.act
 // =====================================================================
 // 시작
 // =====================================================================
-async function boot() {
-  doc = await S.load();
-  S.purgeOld(doc);
+// =====================================================================
+// 처음 화면 (이 기기에 데이터가 없고 동기화도 꺼져 있을 때)
+// =====================================================================
+const LOGO = `<svg class="glogo" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#6D28D9"/><rect x="11" y="14" width="42" height="36" rx="6" fill="#F3EEFF"/><path d="M18 24.5h28M18 32h7M18 39.5h20" stroke="#B9A3F0" stroke-width="3" stroke-linecap="round"/><rect x="28" y="28.2" width="18" height="7.6" rx="2.2" fill="#6D28D9"/></svg>`;
+function showIntro(msg = '') {
+  const g = $('#gate');
+  g.innerHTML = `<div class="gbox">${LOGO}<h1>Study Manager</h1><p>외울 문장을 모아 두고, 노래방처럼 훑어보고, 빈칸 문제로 익힙니다</p>
+    <button class="btn primary wide" data-gate="new">처음 시작하기</button>
+    <button class="btn wide" data-gate="load">Drive에 있는 데이터 불러오기</button>
+    <p class="gmsg" id="gmsg">${esc(msg)}</p>
+    <p class="hint">다른 기기에서 쓰던 데이터가 있으면 불러오기를 고르세요. Google 로그인 창이 열립니다</p></div>`;
+  g.hidden = false;
+}
+$('#gate').addEventListener('click', async e => {
+  const b = e.target.closest('[data-gate]');
+  if (!b || b.disabled) return;
+  if (b.dataset.gate === 'new') { ls('sm-started', '1'); enterApp(); return; }
+  const btns = [...document.querySelectorAll('[data-gate]')];
+  btns.forEach(x => { x.disabled = true; });
+  $('#gmsg').textContent = 'Google 로그인 후 Drive에서 불러오는 중…'; $('#gmsg').classList.add('info');
+  try {
+    const r = await Sync.fetchRemote();
+    if (!r.doc) { showIntro('Drive에 Study Manager 데이터가 없습니다. 먼저 쓰던 기기에서 동기화를 켜세요'); return; }
+    doc = S.normalizeDoc(r.doc);
+    await S.save(doc);
+    Sync.markSignedIn();
+    ls('sm-started', '1');
+    enterApp(`문장 ${S.live(doc.sentences).length}개를 불러왔습니다`);
+    Sync.syncNow();
+  } catch (err) {
+    showIntro(err.offline ? '네트워크에 연결할 수 없습니다' : 'Google 로그인에 실패했습니다. 팝업 차단을 확인하고 다시 시도하세요');
+  }
+});
+function enterApp(msg) {
+  $('#gate').hidden = true; $('#gate').innerHTML = '';
   const p = S.prefs(doc);
   const last = ls('sm-tab');
   ui.view = p.start === 'last' && VIEWS[last] ? last : 'register';
   $('#app').hidden = false;
   renderAll();
+  if (msg) toast(msg);
   if (!S.storageOk) toast('브라우저 저장소를 쓸 수 없어 이 탭을 닫으면 내용이 사라집니다');
+}
+async function wipeDevice() {
+  const on = Sync.signedIn();
+  const msg = on
+    ? '이 기기의 문장·분류·학습 기록을 모두 지웁니다. Drive에 동기화된 데이터는 그대로 남아 다시 불러올 수 있습니다. 계속할까요?'
+    : '<b>동기화가 꺼져 있어 지운 데이터는 되살릴 수 없습니다.</b> 필요하면 먼저 JSON 내보내기로 백업하세요. 계속할까요?';
+  if (!(await confirmDialog('이 기기 데이터 지우기', msg, '지우기', true))) return;
+  await saving;
+  await S.clearAll();
+  Sync.forgetDevice();
+  ['sm-scope', 'sm-tab', 'sm-started'].forEach(k => ls(k, null));
+  location.reload();
+}
+
+async function boot() {
+  doc = await S.load();
+  S.purgeOld(doc);
+  Sync.init({ getDoc: () => doc, applyMerged, onStatus: renderSaveLabel });
+  const fresh = !S.live(doc.sentences).length && !S.live(doc.units).length && !S.live(doc.tags).length;
+  if (fresh && !Sync.signedIn() && !ls('sm-started')) showIntro();
+  else enterApp();
 }
 boot();

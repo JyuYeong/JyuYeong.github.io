@@ -318,3 +318,16 @@ button.qb:active{filter:brightness(.95)}
 .qctl .btn.ok{background:var(--ok);border-color:var(--ok);color:#fff;font-weight:700}
 .qctl .btn.ng{color:var(--danger);border-color:var(--danger-line);font-weight:700}
 @media (prefers-color-scheme:dark){.qctl .btn.ok{color:#0F1115}}
+
+/* ---------- M3: 처음 화면·동기화 ---------- */
+.gate{position:fixed;inset:0;z-index:40;background:var(--bg);overflow-y:auto;display:flex;justify-content:center;padding:max(24px,env(safe-area-inset-top)) 20px max(24px,env(safe-area-inset-bottom))}
+.gbox{width:100%;max-width:380px;margin:auto 0;display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center}
+.glogo{width:72px;height:72px;border-radius:20px;display:block;margin-bottom:4px}
+.gbox h1{margin:0;font-size:22px}
+.gbox p{margin:0;color:var(--muted);font-size:14px}
+.gbox .btn{height:52px;font-size:15px}
+.gmsg{min-height:20px;font-size:13.5px;color:var(--danger)!important}
+.gmsg.info{color:var(--muted)!important}
+button.sync{border:0;background:none;height:36px;padding:0 8px;border-radius:10px;max-width:52vw;overflow:hidden;text-overflow:ellipsis}
+button.sync:hover{background:var(--hover)}
+.sync.ok{color:var(--ok)}
