@@ -1,13 +1,13 @@
 // 보안 영역 화면 (V5): 잠금 화면, 업무 정보 트리, 보안메모, 영역 안 검색, 자동 잠금
 import * as S from './store.js';
 import { st } from './state.js';
-import { $, esc, ic, toast, dlg, openDlg, dlgIs, openMenu, armed, copyText } from './util.js';
+import { $, esc, ic, toast, dlg, openDlg, dlgIs, setDlgBody, openMenu, armed, copyText } from './util.js';
 import * as Vault from './vault.js';
 import { V } from './vault.js';
 import { PW_MIN, pwError, isPin } from './vcrypto.js';
 
 const IDLE_MS = 5 * 60 * 1000;
-export const vu = { tab: 'work', open: new Set(), revealed: new Set(), q: '', hl: null, gate: null, msg: '', busy: false, recovery: null, syncInfo: () => ({}) };
+export const vu = { returnTo: null, tab: 'work', open: new Set(), revealed: new Set(), q: '', hl: null, gate: null, msg: '', busy: false, recovery: null, syncInfo: () => ({}) };
 let rerender = () => {};
 export function initVaultUi({ render, syncInfo }) { rerender = render; vu.syncInfo = syncInfo; }
 const labelsAll = () => S.liveLabels(st.doc);
@@ -146,11 +146,11 @@ export function vaultPageHtml() {
 // 라벨 보기 안의 "보안 정보" 구역
 export function vaultLabelSection(labelId) {
   if (!V.meta) return '';
-  if (!V.unlocked) return `<section class="pgs"><h3>${ic('lock')}보안 정보</h3><p class="hint">보안 영역이 잠겨 있습니다. <button type="button" class="lnk" data-act="v-open">열기</button></p></section>`;
+  if (!V.unlocked) return `<section class="pgs" id="vLabelSec"><h3>${ic('lock')}보안 정보</h3><p class="hint">보안 영역이 잠겨 있습니다. <button type="button" class="lnk" data-act="v-unlock-here">열기</button></p></section>`;
   const folders = Vault.foldersWithLabel(labelId);
   const ms = Vault.memosWithLabel(labelId);
-  if (!folders.length && !ms.length) return `<section class="pgs"><h3>${ic('lock')}보안 정보</h3><p class="hint">이 라벨이 붙은 업무 정보 폴더나 보안메모가 없습니다.</p></section>`;
-  return `<section class="pgs"><h3>${ic('lock')}보안 정보</h3>
+  if (!folders.length && !ms.length) return `<section class="pgs" id="vLabelSec"><h3>${ic('lock')}보안 정보</h3><p class="hint">이 라벨이 붙은 업무 정보 폴더나 보안메모가 없습니다.</p></section>`;
+  return `<section class="pgs" id="vLabelSec"><h3>${ic('lock')}보안 정보</h3>
     ${folders.map(f => `<p class="vpath">${Vault.pathOf(f.id).slice(0, -1).map(p => esc(p.name)).join(' › ') || '업무 정보'}</p>${treeHtml(f.id, { compact: true })}`).join('')}
     ${ms.map(m => memoRowHtml(m, { compact: true })).join('')}</section>`;
 }
@@ -246,6 +246,39 @@ function pwChangeDialog() {
   $('#vcOld').focus();
 }
 
+// ---------- 제자리 잠금 해제 (V5.4) ----------
+// 라벨 보기 등에서 "열기": PIN 창을 띄워 열고, 지금 화면에 그대로 보여 준다
+let pinDlgBusy = false;
+function pinDlgBody(msg = '') {
+  return `<form id="vPinDlg" autocomplete="off" class="vform vpindlg">
+    ${pinIn('vdPin', 'PIN (숫자 4자리)')}
+    ${msg ? `<p class="gmsg" role="alert">${esc(msg)}</p>` : ''}
+    <div class="btns"><button type="button" class="btn" data-act="close-dlg">취소</button><button type="submit" class="btn primary"${pinDlgBusy ? ' disabled' : ''}>${pinDlgBusy ? '확인 중…' : '열기'}</button></div>
+    <div class="glinks"><button type="button" class="lnk" data-act="v-dlg-gate" data-v="register">마스터 비밀번호로 열기</button><button type="button" class="lnk" data-act="v-dlg-gate" data-v="recover">복구 키로 열기</button></div></form>`;
+}
+function unlockHere() {
+  // PIN이 없는 기기(처음 등록·PIN 잠김)나 금고 충돌·복구 키 표시 중이면 보안 영역 화면에서 처리하고, 열리면 이 화면으로 돌아온다
+  if (!V.meta || !V.device || V.conflict || vu.recovery) { goGate(null); return; }
+  pinDlgBusy = false;
+  openDlg('vunlock', '보안 영역 열기', pinDlgBody());
+  requestAnimationFrame(() => $('#vdPin')?.focus());
+}
+function goGate(gate) {
+  if (dlgIs('vunlock')) dlg.close();
+  if (!isVaultPage()) vu.returnTo = { ...st.ui.page };
+  vu.gate = gate; vu.msg = '';
+  st.ui.page = { kind: 'vault', id: null };
+  refresh();
+  requestAnimationFrame(() => $('#page .gate input')?.focus());
+}
+// 열린 뒤: 보안 영역 화면으로 왔던 거면 원래 화면으로 돌려보내고, 보안 정보 칸을 보여 준다
+function afterUnlock() {
+  touchAct();
+  if (vu.returnTo && isVaultPage()) { st.ui.page = vu.returnTo; vu.returnTo = null; }
+  rerender();
+  requestAnimationFrame(() => $('#vLabelSec')?.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+}
+
 // ---------- 다시 그리기 ----------
 function refresh(focusSel) {
   rerender();
@@ -306,7 +339,7 @@ document.addEventListener('submit', async e => {
     if (err) { vu.msg = err; refresh('#vPin1'); return; }
     const pw = val('#vPw'), pin = val('#vPin1');
     await busyRun(async () => {
-      try { await Vault.registerDevice(pw, pin); vu.gate = null; touchAct(); }
+      try { await Vault.registerDevice(pw, pin); vu.gate = null; afterUnlock(); }
       catch { vu.msg = '마스터 비밀번호가 맞지 않습니다'; }
     });
   } else if (f.id === 'vPinForm') {
@@ -314,16 +347,31 @@ document.addEventListener('submit', async e => {
     if (!isPin(pin)) { vu.msg = 'PIN은 숫자 4자리입니다'; refresh('#vPin'); return; }
     await busyRun(async () => {
       const r = await Vault.unlockPin(pin);
-      if (r.ok) { touchAct(); return; }
+      if (r.ok) { afterUnlock(); return; }
       vu.msg = r.error === 'locked-out' ? `PIN을 ${Vault.MAX_PIN_FAILS}번 틀려 이 기기의 PIN을 지웠습니다. 마스터 비밀번호로 다시 등록하세요` : `PIN이 맞지 않습니다 (남은 횟수 ${r.left})`;
     });
     requestAnimationFrame(() => $('#vPin')?.focus());
+  } else if (f.id === 'vPinDlg') {
+    const pin = val('#vdPin');
+    if (pinDlgBusy) return;
+    if (!isPin(pin)) { setDlgBody(pinDlgBody('PIN은 숫자 4자리입니다'), '#vdPin'); return; }
+    pinDlgBusy = true; setDlgBody(pinDlgBody());
+    let r;
+    try { r = await Vault.unlockPin(pin); } finally { pinDlgBusy = false; }
+    if (!dlgIs('vunlock')) { if (r.ok) afterUnlock(); return; } // 확인 중에 창을 닫은 경우
+    if (r.ok) { dlg.close(); afterUnlock(); return; }
+    if (r.error === 'locked-out') {
+      goGate('register');
+      vu.msg = `PIN을 ${Vault.MAX_PIN_FAILS}번 틀려 이 기기의 PIN을 지웠습니다. 마스터 비밀번호로 다시 등록하세요`; refresh('#vPw');
+      return;
+    }
+    setDlgBody(pinDlgBody(`PIN이 맞지 않습니다 (남은 횟수 ${r.left})`), '#vdPin');
   } else if (f.id === 'vRecover') {
     const err = pwPair('#vPw1', '#vPw2') || pinPair('#vPin1', '#vPin2');
     if (err) { vu.msg = err; refresh(); return; }
     const rk = val('#vRk'), pw = val('#vPw1'), pin = val('#vPin1');
     await busyRun(async () => {
-      try { await Vault.recover(rk, pw, pin); vu.gate = null; touchAct(); toast('새 마스터 비밀번호로 바꿨습니다'); }
+      try { await Vault.recover(rk, pw, pin); vu.gate = null; afterUnlock(); toast('새 마스터 비밀번호로 바꿨습니다'); }
       catch (er) { vu.msg = er.message === 'bad-recovery-format' ? '복구 키 형식이 맞지 않습니다 (26자)' : '복구 키가 맞지 않습니다'; }
     });
   } else if (f.id === 'vFieldForm') {
@@ -387,6 +435,7 @@ document.addEventListener('keydown', e => {
 // PIN 4자리를 다 넣으면 바로 열기
 document.addEventListener('input', e => {
   if (e.target.id === 'vPin' && /^\d{4}$/.test(e.target.value)) $('#vPinForm')?.requestSubmit();
+  if (e.target.id === 'vdPin' && /^\d{4}$/.test(e.target.value)) $('#vPinDlg')?.requestSubmit();
   if (e.target.id === 'vQ') { vu.q = e.target.value; const pos = e.target.selectionStart; rerender(); const q = $('#vQ'); if (q) { q.focus(); q.setSelectionRange(pos, pos); } }
   if (e.target.id === 'vfName' && !$('#vFolderForm')?.dataset.id) {
     const p = Vault.planPaths($('#vFolderForm').dataset.parent || null, e.target.value);
@@ -400,7 +449,9 @@ document.addEventListener('click', async e => {
   if (!el || el.disabled) return;
   const act = el.dataset.act, id = el.dataset.id;
   switch (act) {
-    case 'v-open': st.ui.page = { kind: 'vault', id: null }; refresh(); break;
+    case 'v-open': vu.returnTo = null; st.ui.page = { kind: 'vault', id: null }; refresh(); break;
+    case 'v-unlock-here': unlockHere(); break;
+    case 'v-dlg-gate': goGate(el.dataset.v || null); break;
     case 'v-gate': vu.gate = el.dataset.v || null; vu.msg = ''; refresh(); requestAnimationFrame(() => $('#page .gate input')?.focus()); break;
     case 'v-copy-recovery': toast((await copyText(vu.recovery)) ? '복구 키를 복사했습니다' : '복사하지 못했습니다'); break;
     case 'v-use-remote': if (armed(el, '한 번 더 누르면 바꿉니다')) { await vu.syncInfo().resolveConflict?.(); refresh(); } break;

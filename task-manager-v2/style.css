@@ -775,6 +775,10 @@ button.tv{border:0;background:none;padding:0;text-align:left;cursor:pointer}
 /* 다이얼로그 */
 .vform{display:flex;flex-direction:column;gap:8px}
 .vform .fl{margin:4px 0 0}
+.vpindlg{align-items:center;min-width:min(300px,80vw)}
+.vpindlg .in.pin{width:180px}
+.vpindlg .btns{align-self:stretch}
+.vpindlg .glinks{justify-content:center}
 .treebox{display:flex;flex-direction:column;max-height:50dvh;overflow-y:auto;border:1px solid var(--line);border-radius:10px;padding:4px}
 .treebox .mi .ic{width:16px;height:16px;color:var(--muted)}
 .btn.danger.armed{background:var(--u-urgent-bg)}
