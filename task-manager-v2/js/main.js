@@ -6,8 +6,8 @@ import { initVaultUi } from './vaultui.js';
 import { st, applyDetailMode, clampPanelW, PANEL_DEFAULT_W, DEFAULT_Q, DEFAULT_TIME, STATUS_LABEL, loadPrefs, savePrefs, persist, persistLogs, liveTasks, taskById, selTask, onSaved } from './state.js';
 import { $, esc, ic, stIcon, wide, toast, dlg, openDlg, dlgIs, setDlgBody, openMenu, armed, copyText, download } from './util.js';
 import { renderList, renderSide, renderPanel, renderTicker, renderAll, touch, refreshPanelValues, growArea, fitMemos, visibleTasks, tsFootHtml } from './render.js';
-import { openComposer, composer, setKind, tl, refreshLinked, refreshSuggest, refreshDateNote, refreshCount, mdFormat, togglePreview, scrollToLog } from './logs.js';
-import { dashOpen } from './views.js';
+import { openComposer, composer, linkTotal, setKind, tl, refreshLinked, refreshSuggest, refreshDateNote, refreshCount, mdFormat, togglePreview, scrollToLog } from './logs.js';
+import { dashOpen, feedMore } from './views.js';
 import { labelsHtml, refreshLabelsDlg, openLabels, openTopicsOf, newLabelDialog, newTopicDialog, filterHtml, settingsHtml, tickerHtml, TK_STATE } from './dialogs.js';
 
 const doc = () => st.doc;
@@ -360,8 +360,11 @@ document.addEventListener('click', async e => {
       $('#toast').hidden = true;
       break;
     }
-    case 'lg-link': if (!composer.taskIds.includes(id)) composer.taskIds.push(id); composer.query = ''; $('#lgSearch').value = ''; refreshLinked(); $('#lgSearch').focus(); break;
-    case 'lg-unlink': if (composer.taskIds.length > 1) { composer.taskIds = composer.taskIds.filter(x => x !== id); refreshLinked(); } break;
+    case 'lg-link': { const k = LINK_KEY[el.dataset.type] || 'taskIds'; if (!composer[k].includes(id)) composer[k].push(id); composer.query = ''; $('#lgSearch').value = ''; refreshLinked(); $('#lgSearch').focus(); break; }
+    case 'lg-unlink': { const k = LINK_KEY[el.dataset.type] || 'taskIds'; if (linkTotal() > 1) { composer[k] = composer[k].filter(x => x !== id); refreshLinked(); } break; }
+    case 'log-new-for': openComposer({ labelIds: el.dataset.label ? [el.dataset.label] : [], topicIds: el.dataset.topic ? [el.dataset.topic] : [] }); break;
+    case 'feed-log-menu': { const l = S.logById(st.logs, id); if (l) feedLogMenu(el, l); break; }
+    case 'feed-more': feedMore(); renderList(); break;
     case 'md-h': case 'md-b': case 'md-li': case 'md-cb': case 'md-code': mdFormat(act.slice(3)); break;
     case 'md-preview': togglePreview(el); break;
     case 'lg-kind': setKind(el.dataset.v); break;
@@ -466,11 +469,15 @@ function saveLog(f) {
   if (!body.trim()) { toast('내용을 입력하세요'); $('#lgBody')?.focus(); return; }
   if (!date || date > S.todayKST()) { toast('작업일은 오늘 이전이어야 합니다'); return; }
   const ids = composer.taskIds.filter(id => taskById(id));
-  if (!ids.length) { toast('연결할 Task가 없습니다'); return; }
+  const lids = composer.labelIds.filter(id => S.labelById(doc(), id));
+  const gids = composer.topicIds.filter(id => S.topicById(doc(), id));
+  const n = ids.length + lids.length + gids.length;
+  if (!n) { toast('연결할 라벨·주제·Task가 없습니다'); return; }
   let l = composer.editId ? S.logById(st.logs, composer.editId) : null;
   const kind = composer.kind;
-  if (l) S.updateLog(st.logs, l, { body, work_date: date, task_ids: ids, kind });
-  else l = S.createLog(st.logs, { task_ids: ids, work_date: date, body, kind });
+  const links = { task_ids: ids, label_ids: lids, topic_ids: gids };
+  if (l) S.updateLog(st.logs, l, { body, work_date: date, kind, ...links });
+  else l = S.createLog(st.logs, { work_date: date, body, kind, ...links });
   // 대기 중인 Task에 처음 "작업" 이력을 남기면 진행 중으로 ("발생"은 상태를 바꾸지 않음)
   const moved = kind === 'work' ? ids.map(taskById).filter(t => t.status === 'todo') : [];
   moved.forEach(t => { t.status = 'in_progress'; t.completed_at = null; t.updated_at = now(); });
@@ -478,16 +485,36 @@ function saveLog(f) {
   persistLogs();
   dlg.close();
   renderList(); renderPanel();
-  requestAnimationFrame(() => scrollToLog({ id: l.id }));
-  toast(moved.length ? `저장했습니다 · ${moved.length > 1 ? `Task ${moved.length}건을` : '상태를'} “진행 중”으로 바꿨습니다` : (ids.length > 1 ? `Task ${ids.length}건에 저장했습니다` : '저장했습니다'));
+  const lid = l.id;
+  requestAnimationFrame(() => { if (!scrollToLog({ id: lid })) flashFeed(lid); });
+  toast(moved.length ? `저장했습니다 · ${moved.length > 1 ? `Task ${moved.length}건을` : '상태를'} “진행 중”으로 바꿨습니다` : (n > 1 ? `${n}곳에 연결해 저장했습니다` : '저장했습니다'));
+}
+const LINK_KEY = { task: 'taskIds', label: 'labelIds', topic: 'topicIds' };
+// 라벨 보기·주제 보기의 이력 모아 보기에서: 수정·삭제
+function feedLogMenu(anchor, l) {
+  let armedDel = false;
+  openMenu(anchor, () => [
+    { label: '수정', onPick: () => openComposer(null, l.id) },
+    { label: armedDel ? '한 번 더 누르면 삭제' : '이력 삭제', armed: armedDel, note: S.logLinkCount(l) > 1 && armedDel ? `연결된 ${S.logLinkCount(l)}곳 모두에서 사라집니다` : '', onPick: () => {
+      if (!armedDel) { armedDel = true; return 'keep'; }
+      S.deleteLog(st.logs, l); persistLogs(); renderList(); renderPanel();
+      toast('이력을 삭제했습니다', { act: 'log-undo', id: l.id, label: '실행 취소' });
+    } },
+  ]);
+}
+function flashFeed(id) {
+  const el = $(`#flog-${id}`);
+  if (!el) return;
+  el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600);
 }
 function logMenu(anchor, l) {
   const t = selTask();
   let armedDel = false;
   openMenu(anchor, () => [
     { label: '수정', onPick: () => openComposer(t.id, l.id) },
-    ...(l.task_ids.length > 1 ? [{ label: '이 Task에서만 빼기', note: `다른 Task ${l.task_ids.length - 1}건에는 남습니다`, onPick: () => { S.detachLog(st.logs, l, t.id); persistLogs(); renderList(); renderPanel(); toast('이 Task에서 뺐습니다', { act: 'log-undo', id: l.id + '|' + t.id, label: '실행 취소' }); } }] : []),
-    { label: armedDel ? '한 번 더 누르면 삭제' : '이력 삭제', armed: armedDel, note: l.task_ids.length > 1 && armedDel ? `연결된 Task ${l.task_ids.length}건 모두에서 사라집니다` : '', onPick: () => {
+    ...(S.logLinkCount(l) > 1 ? [{ label: '이 Task에서만 빼기', note: `다른 연결 ${S.logLinkCount(l) - 1}곳에는 남습니다`, onPick: () => { S.detachLog(st.logs, l, t.id); persistLogs(); renderList(); renderPanel(); toast('이 Task에서 뺐습니다', { act: 'log-undo', id: l.id + '|' + t.id, label: '실행 취소' }); } }] : []),
+    { label: armedDel ? '한 번 더 누르면 삭제' : '이력 삭제', armed: armedDel, note: S.logLinkCount(l) > 1 && armedDel ? `연결된 ${S.logLinkCount(l)}곳 모두에서 사라집니다` : '', onPick: () => {
       if (!armedDel) { armedDel = true; return 'keep'; }
       S.deleteLog(st.logs, l); persistLogs(); renderList(); renderPanel();
       toast('이력을 삭제했습니다', { act: 'log-undo', id: l.id, label: '실행 취소' });

@@ -841,3 +841,15 @@ body.dm-sheet .panel{height:94dvh}
 .ckbox .kl{width:12px;height:12px;color:var(--muted)}
 .treebox .ck .ic{width:15px;height:15px;color:var(--accent-ink)}
 #vfName{min-height:96px}
+
+/* V5.5 라벨·주제 이력 */
+.pgs h3 .lgadd{margin-left:auto;font-weight:600}
+.lk .sc,.lk2 .sc{display:inline-flex;align-items:center;gap:4px;background:var(--accent-weak);color:var(--accent-ink)}
+.sc .dot{width:7px;height:7px;flex:none}
+.sc .ic{width:12px;height:12px;flex:none}
+.lkc.sc{border-color:var(--accent-weak);background:var(--accent-weak)}
+.lkc .t small{font-size:10.5px;font-weight:700;color:var(--accent-ink);margin-right:5px}
+.lkc.sc>.ic{width:14px;height:14px;color:var(--accent-ink);flex:none}
+.sug>.ic{width:16px;height:16px;color:var(--accent-ink);flex:none}
+.sug>.dot{margin:0 4px}
+.fmore{display:flex;align-items:center;gap:8px}

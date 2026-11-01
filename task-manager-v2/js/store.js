@@ -317,7 +317,8 @@ export function tickerState(k, now = nowKST()) {
 }
 
 // ---------- 작업 이력 ----------
-// 별도 문서 { schema: 'tm2-logs', logs: [{ id, task_ids, work_date, body, ... }] } (V3에서 월별 파일로 나눈다)
+// 별도 문서 { schema: 'tm2-logs', logs: [{ id, task_ids, label_ids, topic_ids, work_date, body, ... }] } (V3에서 월별 파일로 나눈다)
+// V5.5: 이력은 Task뿐 아니라 라벨·주제에도 연결할 수 있다 (섞어서 여러 개). 날짜별 체크·손댄 날은 Task 연결만 반영
 export const LOG_SCHEMA = 'tm2-logs';
 export const LOG_SOFT_LIMIT = 2000;
 export const emptyLogs = () => ({ schema: LOG_SCHEMA, version: VERSION, updated_at: nowIso(), logs: [] });
@@ -345,22 +346,24 @@ export const logsOfTask = (ld, taskId) => ld.logs.filter(l => !l.deleted_at && l
 // 카드 요약용: 작업·발생 모두 센다
 export const logCount = taskId => { let n = 0; for (const idx of [logIdx, evIdx]) idx.get(taskId)?.forEach(c => { n += c; }); return n; };
 export const lastLogDate = taskId => { let d = ''; for (const idx of [logIdx, evIdx]) idx.get(taskId)?.forEach((_, k) => { if (k > d) d = k; }); return d; };
-export function createLog(ld, { task_ids, work_date, body, kind = 'work' }) {
+// 연결 개수 (Task + 라벨 + 주제)
+export const logLinkCount = l => l.task_ids.length + (l.label_ids?.length || 0) + (l.topic_ids?.length || 0);
+export function createLog(ld, { task_ids = [], label_ids = [], topic_ids = [], work_date, body, kind = 'work' }) {
   const ts = nowIso();
-  const l = { id: uniqueId('L-', ld.logs), kind: kind === 'event' ? 'event' : 'work', task_ids: [...new Set(task_ids)], work_date, body: String(body || ''), created_at: ts, updated_at: ts, deleted_at: null };
+  const l = { id: uniqueId('L-', ld.logs), kind: kind === 'event' ? 'event' : 'work', task_ids: [...new Set(task_ids)], label_ids: [...new Set(label_ids)], topic_ids: [...new Set(topic_ids)], work_date, body: String(body || ''), created_at: ts, updated_at: ts, deleted_at: null };
   ld.logs.push(l);
   indexLogs(ld);
   return l;
 }
 export function updateLog(ld, l, patch) {
   Object.assign(l, patch, { updated_at: nowIso() });
-  if (patch.task_ids) l.task_ids = [...new Set(patch.task_ids)];
+  for (const k of ['task_ids', 'label_ids', 'topic_ids']) if (patch[k]) l[k] = [...new Set(patch[k])];
   indexLogs(ld);
   return l;
 }
-// 이 Task에서만 빼기: 연결된 Task가 하나뿐이면 이력 자체를 지운다
+// 이 Task에서만 빼기: 연결이 이것 하나뿐이면(라벨·주제 연결 포함) 이력 자체를 지운다
 export function detachLog(ld, l, taskId) {
-  if (l.task_ids.length <= 1) { l.deleted_at = nowIso(); l.updated_at = l.deleted_at; }
+  if (logLinkCount(l) <= 1) { l.deleted_at = nowIso(); l.updated_at = l.deleted_at; }
   else { l.task_ids = l.task_ids.filter(x => x !== taskId); l.updated_at = nowIso(); }
   indexLogs(ld);
 }
@@ -369,7 +372,9 @@ export function normalizeLogs(ld) {
   const d = { ...emptyLogs(), ...ld };
   if (!Array.isArray(d.logs)) d.logs = [];
   const cut = new Date(Date.now() - PURGE_DAYS * 86400000).toISOString();
-  d.logs = d.logs.filter(l => (!l.deleted_at || l.deleted_at > cut) && Array.isArray(l.task_ids) && l.work_date);
+  const arr = x => (Array.isArray(x) ? x : []);
+  d.logs = d.logs.filter(l => l && (!l.deleted_at || l.deleted_at > cut) && l.work_date)
+    .map(l => (Array.isArray(l.task_ids) && Array.isArray(l.label_ids) && Array.isArray(l.topic_ids) ? l : { ...l, task_ids: arr(l.task_ids), label_ids: arr(l.label_ids), topic_ids: arr(l.topic_ids) }));
   return d;
 }
 

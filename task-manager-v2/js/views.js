@@ -4,7 +4,7 @@ import * as S from './store.js';
 import { st, liveTasks, taskById, STATUS_LABEL } from './state.js';
 import { $, esc, ic, stIcon } from './util.js';
 import { renderMd } from './md.js';
-import { dayLabel } from './logs.js';
+import { dayLabel, scopeBtns } from './logs.js';
 import { vaultPageHtml, vaultLabelSection } from './vaultui.js';
 
 const doc = () => st.doc;
@@ -36,19 +36,26 @@ function taskRow(t, now, { showLabels = true } = {}) {
     <span class="tm">${t.due_date ? `<span class="${ds === 'delayed' ? 'late' : ''}">마감 ${md(t.due_date)}</span>` : ''}${sm ? `<span class="${sm.warn ? 'warn' : ''}">${esc(sm.text)}</span>` : last && !S.isFin(t) ? `<span>최근 ${md(last)}</span>` : ''}</span>
   </article>`;
 }
-function logsFeed(tasks, limit) {
-  const ids = new Set(tasks.map(t => t.id));
-  const logs = st.logs.logs.filter(l => !l.deleted_at && l.task_ids.some(id => ids.has(id))).sort(S.compareLogs);
-  if (!logs.length) return '<p class="hint">아직 이력이 없습니다.</p>';
+// 이력 모아 보기: Task 이력 + 라벨·주제에 직접 남긴 이력 (V5.5). "더 보기"로 늘린 개수는 화면을 옮기면 처음으로
+let more = { key: '', n: 0 };
+export function feedMore() { more.n += 1; }
+function logsFeed(tasks, limit, { labelIds = [], topicIds = [] } = {}) {
+  const ids = new Set(tasks.map(t => t.id)), lset = new Set(labelIds), gset = new Set(topicIds);
+  const logs = st.logs.logs.filter(l => !l.deleted_at && (l.task_ids.some(id => ids.has(id)) || (l.label_ids || []).some(id => lset.has(id)) || (l.topic_ids || []).some(id => gset.has(id)))).sort(S.compareLogs);
+  if (!logs.length) return '<p class="hint">아직 이력이 없습니다. 라벨·주제에 대한 논의나 공유된 사실은 "이력 추가"로 남기세요.</p>';
+  const key = `${st.ui.page.kind}:${st.ui.page.id}`;
+  if (more.key !== key) more = { key, n: 0 };
+  const shown = limit * (1 + more.n);
   let html = '', cur = '';
-  for (const l of logs.slice(0, limit)) {
+  for (const l of logs.slice(0, shown)) {
     if (l.work_date !== cur) { cur = l.work_date; html += `<div class="tld"><span>${dayLabel(cur)}</span></div>`; }
     const ts = l.task_ids.map(taskById).filter(Boolean);
     const ev = S.logKind(l) === 'event';
-    html += `<article class="tle${ev ? ' ev' : ''}"><div class="tlm lk2">${ev ? '<span class="kb ev">발생</span>' : ''}${ts.map(t => `<button type="button" data-act="open" data-id="${t.id}" title="${esc(t.title)}">${esc(t.title)}</button>`).join('')}</div><div class="md">${renderMd(l.body)}</div></article>`;
+    html += `<article class="tle${ev ? ' ev' : ''}" id="flog-${l.id}"><div class="tlm lk2">${ev ? '<span class="kb ev">발생</span>' : ''}${scopeBtns(l)}${ts.map(t => `<button type="button" data-act="open" data-id="${t.id}" title="${esc(t.title)}">${esc(t.title)}</button>`).join('')}<button type="button" class="icbtn xs" data-act="feed-log-menu" data-id="${l.id}" aria-label="이력 메뉴" aria-haspopup="menu">${ic('dots')}</button></div><div class="md">${renderMd(l.body)}</div></article>`;
   }
-  return `<div class="tl">${html}</div>${logs.length > limit ? `<p class="hint">최근 ${limit}건만 표시 (전체 ${logs.length}건)</p>` : ''}`;
+  return `<div class="tl">${html}</div>${logs.length > shown ? `<p class="hint fmore">최근 ${shown}건 표시 (전체 ${logs.length}건) <button type="button" class="lnk" data-act="feed-more">더 보기</button></p>` : ''}`;
 }
+const logHead = (title, attrs) => `<h3>${title}<button type="button" class="btn xs lgadd" data-act="log-new-for" ${attrs}>${ic('plus')}이력 추가</button></h3>`;
 const head = (title, back, extra = '') => `<div class="pgh">${back ? `<button type="button" class="icbtn" data-act="${back.act}"${back.id ? ` data-id="${back.id}"` : ''} aria-label="${esc(back.label)}">${ic('chevL')}</button>` : ''}<h2>${title}</h2>${extra}</div>`;
 
 // ---------- 대시보드 ----------
@@ -119,7 +126,7 @@ function labelHtml(id) {
     ${l ? `<section class="pgs"><h3>주제 <span class="n">${topics.filter(g => !g.archived).length}</span></h3>${topicRows || '<p class="hint">주제가 없습니다. 라벨·주제 관리에서 추가할 수 있습니다.</p>'}</section>` : ''}
     <section class="pgs"><h3>${l ? '주제 없는 Task' : 'Task'} <span class="n">${loose.length}</span></h3>${loose.length ? `<div class="trows">${loose.map(t => taskRow(t, now, { showLabels: false })).join('')}</div>` : '<p class="hint">없습니다.</p>'}</section>
     ${l ? vaultLabelSection(l.id) : ''}
-    <section class="pgs"><h3>최근 이력</h3>${logsFeed(tasks, 15)}</section>`;
+    <section class="pgs">${l ? logHead('최근 이력', `data-label="${l.id}"`) : '<h3>최근 이력</h3>'}${logsFeed(tasks, 15, l ? { labelIds: [l.id], topicIds: topics.map(g => g.id) } : {})}</section>`;
 }
 
 // ---------- 주제 보기 ----------
@@ -135,7 +142,7 @@ function topicHtml(id) {
     ${g.memo ? `<p class="pgmemo">${esc(g.memo)}</p>` : ''}
     ${statChips(c, 'topic:' + g.id)}
     <section class="pgs"><h3>Task <span class="n">${tasks.length}</span></h3>${tasks.length ? `<div class="trows">${tasks.map(t => taskRow(t, now)).join('')}</div>` : '<p class="hint">이 주제에 연결된 Task가 없습니다.</p>'}</section>
-    <section class="pgs"><h3>이력 모아 보기</h3>${logsFeed(tasks, 50)}</section>`;
+    <section class="pgs">${logHead('이력 모아 보기', `data-topic="${g.id}"`)}${logsFeed(tasks, 50, { topicIds: [g.id] })}</section>`;
 }
 
 export function renderPage() {
