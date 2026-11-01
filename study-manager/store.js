@@ -421,9 +421,91 @@ export function inScope(doc, s, scope) {
 export const sentencesSorted = doc => live(doc.sentences).sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '') || (a.id < b.id ? 1 : -1));
 
 // =====================================================================
+// 학습 범위 (조회·문제 공통): { units: [], tags: [], none, star }
+// 과목을 고르면 그 아래 전체. 그 과목의 단원을 하나라도 고르면 고른 단원만.
+// 과목·미분류·태그는 "하나라도 맞으면", 즐겨찾기만은 그 결과에서 다시 거른다. 아무것도 안 고르면 전체
+// =====================================================================
+export const emptyScope = () => ({ units: [], tags: [], none: false, star: false });
+export function cleanScope(doc, sc) {
+  const s = { ...emptyScope(), ...(sc || {}) };
+  s.units = (s.units || []).filter(id => unitById(doc, id));
+  s.tags = (s.tags || []).filter(id => tagById(doc, id));
+  s.none = !!s.none; s.star = !!s.star;
+  return s;
+}
+export const scopeEmpty = sc => !sc.units.length && !sc.tags.length && !sc.none;
+export function matchScope(doc, s, sc) {
+  if (sc.star && !s.starred) return false;
+  if (scopeEmpty(sc)) return true;
+  if (sc.none && !s.unit_id) return true;
+  if (s.tag_ids.some(t => sc.tags.includes(t))) return true;
+  const u = unitById(doc, s.unit_id);
+  if (!u) return false;
+  const subjId = u.parent_id || u.id;
+  if (!sc.units.includes(subjId)) return false;
+  const pickedCh = sc.units.filter(id => unitById(doc, id)?.parent_id === subjId);
+  return !pickedCh.length || pickedCh.includes(u.id);
+}
+export const scoped = (doc, sc) => live(doc.sentences).filter(s => matchScope(doc, s, sc));
+
+// =====================================================================
+// 학습 기록 (progress): 문장마다 P-<문장 id>
+// =====================================================================
+export const MAX_LEVEL = 4;
+export const progressOf = (doc, sid) => live(doc.progress).find(p => p.id === 'P-' + sid) || null;
+export function record(doc, sid, known) {
+  const ts = nowIso();
+  let p = doc.progress.find(x => x.id === 'P-' + sid);
+  if (!p) { p = { id: 'P-' + sid, sid, level: 0, seen: 0, known: 0, unknown: 0, last_at: null, last_result: null, created_at: ts, updated_at: ts, deleted_at: null }; doc.progress.push(p); }
+  p.deleted_at = null;
+  p.seen++;
+  if (known) { p.known++; p.level = Math.min(MAX_LEVEL, (p.level || 0) + 1); } else { p.unknown++; p.level = 0; }
+  p.last_result = known ? 'known' : 'unknown';
+  p.last_at = ts; p.updated_at = ts;
+  return p;
+}
+export function resetProgress(doc, sids) {
+  const ts = nowIso(), set = new Set(sids);
+  for (const p of live(doc.progress)) if (set.has(p.sid)) { p.deleted_at = ts; p.updated_at = ts; }
+}
+// 처음 / 몰랐음 / 알았음 n
+export function levelInfo(doc, sid) {
+  const p = progressOf(doc, sid);
+  if (!p || !p.seen) return { key: 'new', label: '처음' };
+  if (p.last_result === 'unknown' || !p.level) return { key: 'unknown', label: '몰랐음' };
+  return { key: 'known', label: p.level >= MAX_LEVEL ? `알았음 ${MAX_LEVEL}회+` : `알았음 ${p.level}회 연속`, level: p.level };
+}
+// 레벨별 몇 바퀴에 한 번 내는지: 0·1 → 매 바퀴, 2 → 2바퀴, 3 → 3바퀴, 4 → 4바퀴
+export const intervalOf = level => Math.max(1, level || 0);
+const hashId = id => [...String(id)].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
+export function shuffle(arr, rnd = Math.random) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+// 문제 모드 한 바퀴: 레벨이 높은 문장은 몇 바퀴에 한 번만. 범위가 10개 미만이거나 다 빠지면 모두 낸다
+export function quizRound(doc, ids, round, avoidFirst = null, rnd = Math.random) {
+  let pick = ids;
+  if (ids.length >= 10) {
+    pick = ids.filter(id => { const n = intervalOf(progressOf(doc, id)?.level); return n === 1 || (round + hashId(id)) % n === 0; });
+    if (!pick.length) pick = ids;
+  }
+  return shuffleAvoid(pick, avoidFirst, rnd);
+}
+export function shuffleAvoid(ids, avoidFirst, rnd = Math.random) {
+  const a = shuffle(ids, rnd);
+  if (a.length > 1 && a[0] === avoidFirst) { const j = 1 + Math.floor(rnd() * (a.length - 1)); [a[0], a[j]] = [a[j], a[0]]; }
+  return a;
+}
+// 글자(자소 묶음) 단위로 나누기
+const seg = typeof Intl !== 'undefined' && Intl.Segmenter ? new Intl.Segmenter('ko', { granularity: 'grapheme' }) : null;
+export const graphemes = str => (seg ? [...seg.segment(str)].map(x => x.segment) : Array.from(str));
+
+// =====================================================================
 // 설정
 // =====================================================================
 export const PREF_DEFAULTS = { speed: 8, hold: 2, reviewNote: 'off', quizType: 'fixed', keepClass: false, start: 'register' };
+export const QUIZ_TYPES = ['fixed', 'len', 'cho'];
 export function prefs(doc) {
   const rec = live(doc.settings).find(x => x.id === 'S-prefs');
   return { ...PREF_DEFAULTS, ...(rec?.value || {}) };

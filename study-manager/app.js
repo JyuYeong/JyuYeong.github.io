@@ -1,7 +1,7 @@
-// Study Manager: 문장 등록·여러 줄 붙여넣기·목록·과목/단원/태그 분류·설정 (M1)
+// Study Manager: 문장 등록·여러 줄 붙여넣기·목록·과목/단원/태그 분류·설정 (M1) / 학습 범위·조회 모드·문제 모드·학습 기록 (M2)
 import * as S from './store.js';
 
-export const VERSION = 'M1';
+export const VERSION = 'M2';
 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -37,6 +37,10 @@ const P = {
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   chev: '<path d="M8 10l4 4 4-4"/>',
   brace: '<path d="M9 4c-2 0-2.5 1-2.5 3v2c0 1.5-.8 2.5-2 3 1.2.5 2 1.5 2 3v2c0 2 .5 3 2.5 3M15 4c2 0 2.5 1 2.5 3v2c0 1.5.8 2.5 2 3-1.2.5-2 1.5-2 3v2c0 2-.5 3-2.5 3"/>',
+  pause: '<path d="M9 6v12M15 6v12"/>',
+  play1: '<path d="M8 5.5v13l10.5-6.5z"/>',
+  left: '<path d="M14 6l-6 6 6 6"/>',
+  right: '<path d="M10 6l6 6-6 6"/>',
   sel: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 12l3 3 5-6"/>',
 };
 const ic = (name, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[name]}</svg>`;
@@ -164,13 +168,17 @@ function renderView() {
   if (ui.view === 'register') { if (ui.regSub === 'paste') { setTitle('여러 줄 붙여넣기'); v.innerHTML = pasteHtml(); } else { setTitle('등록'); v.innerHTML = registerHtml(); autosizeAll(); } }
   else if (ui.view === 'list') { if (ui.listSub === 'manage') { setTitle('분류 관리'); v.innerHTML = manageHtml(); } else { setTitle('목록'); v.innerHTML = listHtml(); } }
   else if (ui.view === 'settings') { setTitle('설정'); v.innerHTML = settingsHtml(); }
-  else { setTitle(VIEWS[ui.view].label); v.innerHTML = soonHtml(ui.view); }
+  else if (ui.view === 'review') { v.innerHTML = reviewView(); if (RV.on && RV.cur) rvShow(RV.cur); }
+  else if (ui.view === 'quiz') v.innerHTML = quizView();
   renderSelBar();
 }
 function go(view) {
   if (view === ui.view && view === 'register' && ui.regSub === 'paste') ui.regSub = 'form';
   if (view === ui.view && view === 'list' && ui.listSub === 'manage') ui.listSub = 'list';
   if (view !== 'list') { ui.list.selecting = false; ui.list.sel.clear(); }
+  if (view !== 'review' && RV.on && !RV.paused) { RV.paused = true; cancelAnimationFrame(RV.raf); keepAwake(false); }
+  if (view === ui.view && view === 'review' && RV.on) { rvStop(); return; }
+  if (view === ui.view && view === 'quiz' && QZ.on) { QZ.on = false; }
   ui.view = view;
   ls('sm-tab', view);
   renderAll();
@@ -572,18 +580,286 @@ function refreshManage(focusSel) {
 }
 
 // =====================================================================
-// 조회·문제 (M2에서 제공)
+// 학습 범위 (조회·문제 공통)
 // =====================================================================
-function soonHtml(v) {
-  const all = S.live(doc.sentences);
-  const withBlank = all.filter(s => S.blanksOf(s.text).length).length;
-  const txt = v === 'review'
-    ? '등록한 문장이 노래방처럼 한 글자씩 채워지며 랜덤으로 나타나는 모드입니다.'
-    : '빈칸을 [   ] 또는 초성 [ㅌㅅㅌ]으로 가리고, 눌러서 답과 보충설명을 확인하는 모드입니다.';
-  return `<div class="wrap"><div class="card emptycard">${ic(VIEWS[v].icon, 'lg')}<h2>${VIEWS[v].label} 모드는 다음 단계(M2)에서 열립니다</h2><p>${txt}</p>
-    <p class="stat">지금 문장 <b>${all.length}</b>개${v === 'quiz' ? ` · 빈칸 있는 문장 <b>${withBlank}</b>개` : ''}</p>
-    <button class="btn primary" data-act="nav" data-v="register">${ic('edit')}문장 등록하기</button></div></div>`;
+function loadScope() { try { return S.cleanScope(doc, JSON.parse(ls('sm-scope') || 'null')); } catch { return S.emptyScope(); } }
+function saveScope(sc) { ls('sm-scope', JSON.stringify(sc)); }
+function scopeIds(mode, sc = loadScope()) {
+  const list = S.scoped(doc, sc);
+  return mode === 'quiz' ? list.filter(s => S.blanksOf(s.text).length).map(s => s.id) : list.map(s => s.id);
 }
+const togChip = (act, id, label, on, extra = '') => `<button type="button" class="chip${extra}" data-act="${act}" data-id="${id}" aria-pressed="${on}">${label}</button>`;
+function scopeHtml(mode) {
+  const all = S.live(doc.sentences);
+  if (!all.length) return `<div class="wrap"><div class="card emptycard">${ic(VIEWS[mode].icon, 'lg')}<h2>아직 등록한 문장이 없습니다</h2><p>문장을 등록하면 ${mode === 'quiz' ? '빈칸 문제를 풀' : '조회 모드를 쓸'} 수 있습니다</p>
+    <button class="btn primary" data-act="nav" data-v="register">${ic('edit')}문장 등록하기</button></div></div>`;
+  const sc = loadScope();
+  const subjects = S.subjectsOf(doc);
+  const tags = S.tagsOf(doc);
+  const list = S.scoped(doc, sc);
+  const ids = scopeIds(mode, sc);
+  const noBlank = list.length - ids.length;
+  let rows = `<div class="crow"><span class="cl">과목</span><div class="chips">${subjects.map(u => togChip('sc-unit', u.id, esc(u.name), sc.units.includes(u.id))).join('')}${togChip('sc-none', '', '미분류', sc.none)}</div></div>`;
+  for (const u of subjects.filter(x => sc.units.includes(x.id))) {
+    const chs = S.chaptersOf(doc, u.id);
+    if (chs.length) rows += `<div class="crow"><span class="cl"></span><div class="chips sub"><span class="sublbl">${esc(u.name)}</span>${chs.map(c => togChip('sc-unit', c.id, esc(c.name), sc.units.includes(c.id))).join('')}</div></div>`;
+  }
+  if (tags.length) rows += `<div class="crow"><span class="cl">태그</span><div class="chips">${tags.map(t => togChip('sc-tag', t.id, '#' + esc(t.name), sc.tags.includes(t.id), ' tg')).join('')}</div></div>`;
+  rows += `<div class="crow"><span class="cl"></span><div class="chips">${togChip('sc-star', '', `${ic('star')}즐겨찾기만`, sc.star)}</div></div>`;
+  let stat = '';
+  if (mode === 'quiz') {
+    const c = { new: 0, unknown: 0, known: 0 };
+    ids.forEach(id => c[S.levelInfo(doc, id).key]++);
+    stat = `<div class="lvl"><span><i class="d new"></i>처음 ${c.new}</span><span><i class="d unknown"></i>몰랐음 ${c.unknown}</span><span><i class="d known"></i>알았음 ${c.known}</span></div>`;
+  }
+  const p = S.prefs(doc);
+  const how = mode === 'review'
+    ? `초당 ${p.speed}글자 · 멈춤 ${p.hold}초${p.reviewNote === 'after' ? ' · 보충설명 표시' : ''}`
+    : `유형: ${{ fixed: '빈칸', len: '길이 빈칸', cho: '초성', mix: '섞기' }[p.quizType]}`;
+  return `<div class="wrap">
+    <div class="card"><h2>${ic('folder')}학습 범위 <span class="sub">${S.scopeEmpty(sc) ? '고르지 않으면 전체' : `<button class="link sm" data-act="sc-clear">모두 해제</button>`}</span></h2>
+      ${rows}
+    </div>
+    <div class="card startcard">
+      <div class="big"><b>${ids.length}</b>개 문장</div>
+      ${mode === 'quiz' && noBlank ? `<p class="hint" style="margin:2px 0 0">빈칸 없는 문장 ${noBlank}개는 문제에서 빠집니다</p>` : ''}
+      ${stat}
+      <button class="btn primary wide startbtn" data-act="${mode === 'quiz' ? 'qz-start' : 'rv-start'}"${ids.length ? '' : ' disabled'}>${ic(mode === 'quiz' ? 'quiz' : 'play')}${mode === 'quiz' ? '문제 시작' : '조회 시작'}</button>
+      <div class="howrow"><span>${how}</span><button class="link sm" data-act="sess-opt" data-mode="${mode}">바꾸기</button></div>
+      ${mode === 'quiz' && ids.some(id => S.progressOf(doc, id)) ? `<button class="link sm danger" data-act="qz-reset">이 범위 학습 기록 초기화</button>` : ''}
+    </div>
+  </div>`;
+}
+function onScopeAct(act, id) {
+  const sc = loadScope();
+  if (act === 'sc-unit') {
+    const u = S.unitById(doc, id);
+    if (sc.units.includes(id)) {
+      sc.units = sc.units.filter(x => x !== id);
+      if (u && !u.parent_id) { const chs = new Set(S.chaptersOf(doc, u.id, { archived: true }).map(c => c.id)); sc.units = sc.units.filter(x => !chs.has(x)); }
+    } else sc.units.push(id);
+  } else if (act === 'sc-tag') sc.tags = sc.tags.includes(id) ? sc.tags.filter(x => x !== id) : [...sc.tags, id];
+  else if (act === 'sc-none') sc.none = !sc.none;
+  else if (act === 'sc-star') sc.star = !sc.star;
+  else if (act === 'sc-clear') Object.assign(sc, S.emptyScope());
+  saveScope(sc);
+  const st = $('#view').scrollTop; renderView(); $('#view').scrollTop = st;
+}
+// 조회·문제 화면 옵션 (속도·유형)
+function sessOptions(mode) {
+  const p = S.prefs(doc);
+  const body = mode === 'review'
+    ? `<div class="srow2"><label class="fl" for="pSpeed">속도 <b id="vSpeed">초당 ${p.speed}글자</b></label><input type="range" id="pSpeed" data-range="speed" min="2" max="30" step="1" value="${p.speed}"></div>
+       <div class="srow2"><label class="fl" for="pHold">다 채운 뒤 멈춤 <b id="vHold">${p.hold}초</b></label><input type="range" id="pHold" data-range="hold" min="0" max="10" step="0.5" value="${p.hold}"></div>
+       <div class="srow2"><span class="fl">보충설명</span><span id="optSeg">${segHtml('reviewNote', [['off', '보이지 않음'], ['after', '다 채운 뒤 표시']], p.reviewNote)}</span></div>`
+    : `<div class="srow2"><span class="fl">문제 유형</span><span id="optSeg">${segHtml('quizType', [['fixed', '빈칸'], ['len', '길이 빈칸'], ['cho', '초성'], ['mix', '섞기']], p.quizType)}</span></div><p class="hint" id="qtHint">${quizTypeHint(p.quizType)}</p>`;
+  openDialog(mode === 'review' ? '조회 설정' : '문제 설정', body, '<button class="btn primary" data-dlg="close">닫기</button>');
+  onDlgClose = () => { if (ui.view === mode && !(mode === 'review' ? RV.on : QZ.on)) renderView(); };
+}
+
+// 화면이 꺼지지 않게 (조회 중)
+let wakeLock = null;
+async function keepAwake(on) {
+  try {
+    if (on && !wakeLock && 'wakeLock' in navigator && document.visibilityState === 'visible') { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); }
+    if (!on && wakeLock) { const w = wakeLock; wakeLock = null; await w.release(); }
+  } catch { wakeLock = null; }
+}
+
+// =====================================================================
+// 조회 모드: 회색 글자를 한 글자씩 채우고, 다 채우면 멈췄다가 다음 문장
+// =====================================================================
+const RV = { on: false, ids: [], deck: [], hist: [], hi: -1, cur: null, spans: [], order: [], k: 0, acc: 0, phase: 'type', holdLeft: 0, paused: false, raf: 0, last: 0, count: 0 };
+function rvStart() {
+  const ids = scopeIds('review');
+  if (!ids.length) return;
+  Object.assign(RV, { on: true, ids, deck: S.shuffle(ids), hist: [], hi: -1, paused: false, count: 0 });
+  renderView();
+  rvNext();
+}
+function rvStop() { cancelAnimationFrame(RV.raf); RV.on = false; keepAwake(false); renderView(); }
+function rvPull() {
+  if (!RV.deck.length) {
+    RV.ids = RV.ids.filter(id => S.sentenceById(doc, id));
+    if (!RV.ids.length) return null;
+    RV.deck = S.shuffleAvoid(RV.ids, RV.cur);
+  }
+  return RV.deck.shift();
+}
+function rvNext() {
+  let id;
+  if (RV.hi < RV.hist.length - 1) id = RV.hist[++RV.hi];
+  else {
+    id = rvPull();
+    if (!id) { rvStop(); return; }
+    RV.hist.push(id);
+    if (RV.hist.length > 300) RV.hist.shift();
+    RV.hi = RV.hist.length - 1;
+  }
+  RV.count++;
+  rvShow(id);
+}
+function rvPrev() { if (RV.hi > 0) { RV.hi--; rvShow(RV.hist[RV.hi]); } else toast('처음 문장입니다'); }
+function rvSessionHtml() {
+  return `<div class="sess">
+    <div class="sbar"><button class="mini" data-act="rv-end">${ic('back')}범위</button><span class="sp"></span><span class="scount" id="rvCount"></span><button class="icbtn sm" data-act="sess-opt" data-mode="review" aria-label="조회 설정">${ic('gear')}</button></div>
+    <div class="rvstage" id="rvStage">
+      <div class="rvmeta" id="rvMeta"></div>
+      <div class="rvtext" id="rvText"></div>
+      <div class="rvnote" id="rvNote" hidden></div>
+      <div class="rvpause" id="rvPause" hidden>${ic('pause')}<span>일시정지 · 눌러서 계속</span></div>
+    </div>
+    <div class="sctl">
+      <button class="icbtn" data-act="rv-prev" aria-label="이전 문장">${ic('left')}</button>
+      <button class="icbtn big" data-act="rv-toggle" id="rvToggle" aria-label="일시정지">${ic('pause')}</button>
+      <button class="icbtn" data-act="rv-next" aria-label="다음 문장">${ic('right')}</button>
+    </div>
+    <p class="ftip">화면을 누르면 일시정지 · 왼쪽으로 밀면 다음, 오른쪽으로 밀면 이전</p>
+  </div>`;
+}
+function rvShow(id) {
+  cancelAnimationFrame(RV.raf);
+  const s = S.sentenceById(doc, id);
+  if (!s) { rvNext(); return; }
+  RV.cur = id;
+  const chars = [];
+  for (const g of S.parse(s.text)) for (const ch of S.graphemes(g.t === 'text' ? g.s : g.ans)) chars.push({ ch, blank: g.t === 'blank' });
+  const text = $('#rvText');
+  if (!text) return;
+  text.innerHTML = chars.map(c => (c.ch === '\n' ? '<br>' : `<span class="c${c.blank ? ' b' : ''}">${esc(c.ch)}</span>`)).join('');
+  RV.spans = [...text.querySelectorAll('span.c')];
+  const vis = chars.filter(c => c.ch !== '\n');
+  RV.order = vis.map((c, i) => (/\s/.test(c.ch) ? -1 : i)).filter(i => i >= 0);
+  RV.k = 0; RV.acc = 0; RV.phase = 'type';
+  $('#rvMeta').innerHTML = metaHtml(s);
+  const note = $('#rvNote');
+  note.hidden = true; note.innerHTML = s.note ? `${ic('note')}<span>${esc(s.note)}</span>` : '';
+  $('#rvStage').classList.remove('fade');
+  $('#rvCount').textContent = `${RV.count}번째 · 범위 ${RV.ids.length}개`;
+  rvSetPaused(RV.paused);
+}
+function rvSetPaused(p) {
+  RV.paused = p;
+  const pz = $('#rvPause'); if (pz) pz.hidden = !p;
+  const t = $('#rvToggle'); if (t) { t.innerHTML = ic(p ? 'play1' : 'pause'); t.setAttribute('aria-label', p ? '계속' : '일시정지'); }
+  cancelAnimationFrame(RV.raf);
+  keepAwake(!p);
+  if (!p) { RV.last = 0; RV.raf = requestAnimationFrame(rvTick); }
+}
+function rvTick(ts) {
+  if (!RV.on || RV.paused || !$('#rvText')) return;
+  const dt = RV.last ? Math.min(ts - RV.last, 100) : 0;
+  RV.last = ts;
+  const p = S.prefs(doc);
+  if (RV.phase === 'type') {
+    RV.acc += dt;
+    const target = Math.min(RV.order.length, Math.floor(RV.acc / 1000 * p.speed) + 1);
+    while (RV.k < target) {
+      const upto = RV.order[RV.k];
+      for (let i = RV.k ? RV.order[RV.k - 1] + 1 : 0; i <= upto; i++) RV.spans[i]?.classList.add('on');
+      RV.k++;
+    }
+    if (RV.k >= RV.order.length) {
+      RV.spans.forEach(s => s.classList.add('on'));
+      RV.phase = 'hold'; RV.holdLeft = p.hold * 1000;
+      const note = $('#rvNote');
+      if (p.reviewNote === 'after' && note.innerHTML) note.hidden = false;
+    }
+  } else if (RV.phase === 'hold') {
+    RV.holdLeft -= dt;
+    if (RV.holdLeft <= 0) {
+      RV.phase = 'fade';
+      $('#rvStage').classList.add('fade');
+      setTimeout(() => { if (RV.on && RV.phase === 'fade' && !RV.paused) rvNext(); }, 380);
+      return;
+    }
+  }
+  RV.raf = requestAnimationFrame(rvTick);
+}
+function rvToggle() {
+  if (RV.phase === 'fade') return;
+  rvSetPaused(!RV.paused);
+}
+
+// =====================================================================
+// 문제 모드
+// =====================================================================
+const QZ = { on: false, ids: [], round: 0, queue: [], again: new Set(), cur: null, type: 'fixed', open: new Set(), noteOpen: false, known: 0, unknown: 0, done: 0 };
+function qzStart() {
+  const ids = scopeIds('quiz');
+  if (!ids.length) return;
+  Object.assign(QZ, { on: true, ids, round: 0, queue: [], cur: null, known: 0, unknown: 0, done: 0 });
+  QZ.again = new Set();
+  qzRound();
+  qzNext();
+}
+function qzRound() {
+  QZ.ids = QZ.ids.filter(id => S.sentenceById(doc, id) && S.blanksOf(S.sentenceById(doc, id).text).length);
+  QZ.round++;
+  QZ.queue = S.quizRound(doc, QZ.ids, QZ.round, QZ.cur);
+  QZ.again.clear();
+}
+function qzNext() {
+  if (!QZ.queue.length) {
+    if (QZ.round >= 1 && QZ.cur) toast(`한 바퀴를 마쳤습니다 · 알았음 ${QZ.known} · 몰랐음 ${QZ.unknown}`);
+    qzRound();
+    if (!QZ.queue.length) { QZ.on = false; renderView(); return; }
+  }
+  QZ.cur = QZ.queue.shift();
+  const p = S.prefs(doc);
+  QZ.type = p.quizType === 'mix' ? S.QUIZ_TYPES[Math.floor(Math.random() * 3)] : p.quizType;
+  QZ.open = new Set(); QZ.noteOpen = false;
+  renderView();
+}
+function blankHtml(g, i, type, open) {
+  if (open) return `<span class="qb open">${esc(g.ans)}</span>`;
+  let inner;
+  if (type === 'cho') inner = `<span class="qin cho">${esc(S.choHint(g.ans))}</span>`;
+  else if (type === 'len') inner = `<span class="qin ghost">${esc(g.ans)}</span>`;
+  else inner = '<span class="qin fixed"></span>';
+  return `<button type="button" class="qb" data-act="qz-open" data-i="${i}" aria-label="빈칸 ${i + 1} 정답 보기">${inner}</button>${g.hint ? `<small class="qhint">${esc(g.hint)}</small>` : ''}`;
+}
+function qzSessionHtml() {
+  const s = S.sentenceById(doc, QZ.cur);
+  if (!s) { setTimeout(qzNext); return ''; }
+  const segs = S.parse(s.text);
+  const nBlank = segs.filter(g => g.t === 'blank').length;
+  let bi = -1;
+  const body = segs.map(g => { if (g.t === 'text') return esc(g.s); bi++; return blankHtml(g, bi, QZ.type, QZ.open.has(bi)); }).join('');
+  const allOpen = QZ.open.size >= nBlank;
+  const lv = S.levelInfo(doc, s.id);
+  const left = QZ.queue.length;
+  return `<div class="sess">
+    <div class="sbar"><button class="mini" data-act="qz-end">${ic('back')}범위</button><span class="sp"></span><span class="scount">${QZ.round}바퀴 · 남은 ${left}개 · <b class="okc">${QZ.known}</b> / <b class="ngc">${QZ.unknown}</b></span><button class="icbtn sm" data-act="sess-opt" data-mode="quiz" aria-label="문제 설정">${ic('gear')}</button></div>
+    <div class="qzcard">
+      <div class="qzmeta"><span class="lvtag ${lv.key}">${lv.label}</span>${metaHtml(s)}<span class="sp"></span><button class="icbtn sm star${s.starred ? ' on' : ''}" data-act="qz-star" aria-label="${s.starred ? '즐겨찾기 해제' : '즐겨찾기'}" aria-pressed="${!!s.starred}">${ic('star')}</button></div>
+      <div class="qtext">${body}</div>
+      ${allOpen && s.note ? (QZ.noteOpen ? `<div class="qnote">${ic('note')}<span>${esc(s.note)}</span></div>` : `<button class="mini notebtn" data-act="qz-note">${ic('note')}보충설명 보기</button>`) : ''}
+    </div>
+    <div class="qctl">${allOpen
+      ? `<button class="btn ng" data-act="qz-ans" data-v="0">몰랐음</button><button class="btn ok" data-act="qz-ans" data-v="1">알았음</button>`
+      : `<button class="btn" data-act="qz-skip">건너뛰기</button><button class="btn primary" data-act="qz-all">${nBlank > 1 ? '모두 보기' : '정답 보기'}</button>`}</div>
+    <p class="ftip">${allOpen ? '알았음이면 점점 덜 나오고, 몰랐음이면 이번 바퀴 뒤쪽에 한 번 더 나옵니다' : '빈칸을 누르면 그 빈칸의 정답이 나옵니다'}</p>
+  </div>`;
+}
+async function qzAnswer(known) {
+  const id = QZ.cur;
+  S.record(doc, id, known);
+  if (known) QZ.known++; else {
+    QZ.unknown++;
+    if (!QZ.again.has(id) && QZ.queue.length) {
+      QZ.again.add(id);
+      const min = Math.min(QZ.queue.length, 2);
+      const pos = min + Math.floor(Math.random() * (QZ.queue.length - min + 1));
+      QZ.queue.splice(pos, 0, id);
+    }
+  }
+  QZ.done++;
+  persist();
+  qzNext();
+}
+function quizView() { setTitle('문제'); return QZ.on ? qzSessionHtml() : scopeHtml('quiz'); }
+function reviewView() { setTitle('조회'); return RV.on ? rvSessionHtml() : scopeHtml('review'); }
 
 // =====================================================================
 // 설정
@@ -826,10 +1102,40 @@ document.addEventListener('click', async e => {
       if (v === 'true' || v === 'false') v = v === 'true';
       S.setPref(doc, k, v);
       await persist();
+      if (b.closest('dialog')) {
+        b.parentElement.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+        const h = $('#qtHint'); if (h && k === 'quizType') h.textContent = quizTypeHint(v);
+        if (k === 'quizType' && QZ.on && !QZ.open.size) { QZ.type = v === 'mix' ? S.QUIZ_TYPES[Math.floor(Math.random() * 3)] : v; renderView(); }
+        break;
+      }
       const sc = $('#view').scrollTop; renderView(); $('#view').scrollTop = sc;
       break;
     }
     case 'export': exportJson(); break;
+    // ----- 학습 범위 -----
+    case 'sc-unit': case 'sc-tag': case 'sc-none': case 'sc-star': case 'sc-clear': onScopeAct(act, id); break;
+    case 'sess-opt': sessOptions(b.dataset.mode); break;
+    // ----- 조회 -----
+    case 'rv-start': rvStart(); break;
+    case 'rv-end': rvStop(); break;
+    case 'rv-toggle': rvToggle(); break;
+    case 'rv-next': rvNext(); break;
+    case 'rv-prev': rvPrev(); break;
+    // ----- 문제 -----
+    case 'qz-start': qzStart(); break;
+    case 'qz-end': QZ.on = false; renderView(); break;
+    case 'qz-open': QZ.open.add(Number(b.dataset.i)); renderView(); break;
+    case 'qz-all': { const s = S.sentenceById(doc, QZ.cur); S.blanksOf(s.text).forEach((_, i) => QZ.open.add(i)); renderView(); break; }
+    case 'qz-note': QZ.noteOpen = true; renderView(); break;
+    case 'qz-skip': qzNext(); break;
+    case 'qz-ans': await qzAnswer(b.dataset.v === '1'); break;
+    case 'qz-star': { const s = S.sentenceById(doc, QZ.cur); S.saveSentence(doc, { ...s, starred: !s.starred }, s.id); await persist(); renderView(); break; }
+    case 'qz-reset': {
+      const ids = scopeIds('quiz');
+      if (!(await confirmDialog('학습 기록 초기화', `지금 범위의 문장 ${ids.length}개를 모두 '처음' 상태로 되돌릴까요?`, '초기화', true))) break;
+      S.resetProgress(doc, ids); await persist(); renderView(); toast('학습 기록을 초기화했습니다');
+      break;
+    }
     case 'import': $('#importFile').click(); break;
   }
 });
@@ -856,6 +1162,7 @@ document.addEventListener('input', e => {
     const k = t.dataset.range, v = Number(t.value);
     if (k === 'speed') $('#vSpeed').textContent = `초당 ${v}글자`;
     if (k === 'hold') $('#vHold').textContent = `${v}초`;
+    S.setPref(doc, k, v);
   }
 });
 let pasteTimer, qTimer;
@@ -890,6 +1197,31 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && t.dataset?.f) { e.preventDefault(); if (t.dataset.f === 'dlg') $('[data-act="save-dlg"]')?.click(); else if (t.dataset.f === 'page') saveForm('page'); return; }
   const r = t.closest?.('.srow');
   if (r && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); r.click(); }
+});
+// 조회 화면: 누르면 일시정지, 밀면 다음/이전
+let swipe = null;
+document.addEventListener('pointerdown', e => { if (RV.on && e.target.closest('#rvStage')) swipe = { x: e.clientX, y: e.clientY, t: Date.now() }; });
+document.addEventListener('pointerup', e => {
+  if (!swipe || !RV.on) { swipe = null; return; }
+  const dx = e.clientX - swipe.x, dy = e.clientY - swipe.y;
+  swipe = null;
+  if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.3) { if (dx < 0) rvNext(); else rvPrev(); return; }
+  if (Math.abs(dx) < 12 && Math.abs(dy) < 12 && e.target.closest('#rvStage')) rvToggle();
+});
+document.addEventListener('pointercancel', () => { swipe = null; });
+document.addEventListener('keydown', e => {
+  if (dlg().open || e.target.matches?.('input, textarea')) return;
+  if (ui.view === 'review' && RV.on) {
+    if (e.key === ' ') { e.preventDefault(); rvToggle(); } else if (e.key === 'ArrowRight') rvNext(); else if (e.key === 'ArrowLeft') rvPrev();
+  } else if (ui.view === 'quiz' && QZ.on) {
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); ($('[data-act="qz-all"]') || $('[data-act="qz-ans"][data-v="1"]'))?.click(); }
+    else if (e.key === '1') $('[data-act="qz-ans"][data-v="0"]')?.click();
+    else if (e.key === '2') $('[data-act="qz-ans"][data-v="1"]')?.click();
+  }
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && RV.on && !RV.paused) rvSetPaused(true);
+  else if (document.visibilityState === 'visible' && RV.on && !RV.paused) keepAwake(true);
 });
 // 입력 중에는 (모바일) 하단 탭을 숨겨 키보드 위 공간을 넓힌다
 document.addEventListener('focusin', e => { if (e.target.matches('textarea, input.in')) document.body.classList.add('typing'); });
