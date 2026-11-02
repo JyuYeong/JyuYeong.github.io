@@ -99,13 +99,14 @@ export function choOf(s) {
   return out;
 }
 export const isCho = t => t.length > 0 && [...t].every(ch => CHO_SET.has(ch));
-// 문제 모드 초성 힌트: 한글은 첫 자음, 영문·숫자는 단어마다 첫 글자만 남기고 나머지는 _, 기호·공백은 그대로
+// 문제 모드 초성 힌트: 한글은 첫 자음, 숫자는 *, 영문은 단어마다 첫 글자만 남기고 나머지는 _, 기호·공백은 그대로
 export function choHint(ans) {
   let out = '', inWord = false;
   for (const ch of String(ans)) {
     const c = ch.codePointAt(0);
     if (c >= 0xAC00 && c <= 0xD7A3) { out += CHO[Math.floor((c - 0xAC00) / 588)]; inWord = false; }
-    else if (/[A-Za-z0-9]/.test(ch)) { out += inWord ? '_' : ch; inWord = true; }
+    else if (/[0-9０-９]/.test(ch)) { out += '*'; inWord = false; }
+    else if (/[A-Za-z]/.test(ch)) { out += inWord ? '_' : ch; inWord = true; }
     else { out += ch; inWord = false; }
   }
   return out;

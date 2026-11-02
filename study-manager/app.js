@@ -650,7 +650,7 @@ function scopeHtml(mode) {
   }
   const p = S.prefs(doc);
   const how = mode === 'review'
-    ? `초당 ${p.speed}글자 · 멈춤 ${p.hold}초${p.reviewNote === 'after' ? ' · 보충설명 표시' : ''}`
+    ? `초당 ${p.speed}글자 · 멈춤 ${p.hold}초${p.reviewNote === 'after' ? ' · 보충설명 항상' : ''}`
     : `유형: ${{ fixed: '빈칸', len: '길이 빈칸', cho: '초성', mix: '섞기' }[p.quizType]}`;
   return `<div class="wrap">
     <div class="card"><h2>${ic('folder')}학습 범위 <span class="sub">${S.scopeEmpty(sc) ? '고르지 않으면 전체' : `<button class="link sm" data-act="sc-clear">모두 해제</button>`}</span></h2>
@@ -687,7 +687,7 @@ function sessOptions(mode) {
   const body = mode === 'review'
     ? `<div class="srow2"><label class="fl" for="pSpeed">속도 <b id="vSpeed">초당 ${p.speed}글자</b></label><input type="range" id="pSpeed" data-range="speed" min="2" max="30" step="1" value="${p.speed}"></div>
        <div class="srow2"><label class="fl" for="pHold">다 채운 뒤 멈춤 <b id="vHold">${p.hold}초</b></label><input type="range" id="pHold" data-range="hold" min="0" max="10" step="0.5" value="${p.hold}"></div>
-       <div class="srow2"><span class="fl">보충설명</span><span id="optSeg">${segHtml('reviewNote', [['off', '보이지 않음'], ['after', '다 채운 뒤 표시']], p.reviewNote)}</span></div>`
+       <div class="srow2"><span class="fl">보충설명 자동 표시</span><span id="optSeg">${segHtml('reviewNote', [['off', '누를 때만'], ['after', '다 채운 뒤 항상']], p.reviewNote)}</span></div><p class="hint">'누를 때만'이면 보충설명이 있는 문장에 버튼이 나오고, 누르면 멈춘 채로 보여 줍니다</p>`
     : `<div class="srow2"><span class="fl">문제 유형</span><span id="optSeg">${segHtml('quizType', [['fixed', '빈칸'], ['len', '길이 빈칸'], ['cho', '초성'], ['mix', '섞기']], p.quizType)}</span></div><p class="hint" id="qtHint">${quizTypeHint(p.quizType)}</p>`;
   openDialog(mode === 'review' ? '조회 설정' : '문제 설정', body, '<button class="btn primary" data-dlg="close">닫기</button>');
   onDlgClose = () => { if (ui.view === mode && !(mode === 'review' ? RV.on : QZ.on)) renderView(); };
@@ -742,6 +742,7 @@ function rvSessionHtml() {
     <div class="rvstage" id="rvStage">
       <div class="rvmeta" id="rvMeta"></div>
       <div class="rvtext" id="rvText"></div>
+      <button type="button" class="mini rvnotebtn" id="rvNoteBtn" data-act="rv-note" hidden>${ic('note')}<span>보충설명</span></button>
       <div class="rvnote" id="rvNote" hidden></div>
       <div class="rvpause" id="rvPause" hidden>${ic('pause')}<span>일시정지 · 눌러서 계속</span></div>
     </div>
@@ -770,13 +771,46 @@ function rvShow(id) {
   $('#rvMeta').innerHTML = metaHtml(s);
   const note = $('#rvNote');
   note.hidden = true; note.innerHTML = s.note ? `${ic('note')}<span>${esc(s.note)}</span>` : '';
+  RV.noteHold = false;
+  rvNoteBtn();
   $('#rvStage').classList.remove('fade');
   $('#rvCount').textContent = `${RV.count}번째 · 범위 ${RV.ids.length}개`;
   rvSetPaused(RV.paused);
 }
+// 보충설명 버튼: 문장에 보충설명이 있을 때만. 열면 문장을 다 채우고 멈춘다(읽는 동안 넘어가지 않게), 닫으면 이어서
+function rvNoteBtn() {
+  const b = $('#rvNoteBtn'), note = $('#rvNote');
+  if (!b) return;
+  b.hidden = !note.innerHTML;
+  const open = !note.hidden;
+  b.setAttribute('aria-expanded', open);
+  b.classList.toggle('on', open);
+  b.querySelector('span').textContent = open ? (RV.noteHold ? '닫고 계속' : '보충설명 닫기') : '보충설명';
+}
+function rvNote() {
+  const note = $('#rvNote');
+  if (!note?.innerHTML) return;
+  if (note.hidden) {
+    RV.spans.forEach(x => x.classList.add('on'));
+    RV.k = RV.order.length;
+    RV.phase = 'hold'; RV.holdLeft = S.prefs(doc).hold * 1000;
+    $('#rvStage').classList.remove('fade');
+    note.hidden = false;
+    RV.noteHold = true;
+    rvSetPaused(true);
+  } else {
+    note.hidden = true;
+    const resume = RV.noteHold && RV.paused;
+    RV.noteHold = false;
+    if (resume) rvSetPaused(false);
+  }
+  rvNoteBtn();
+}
 function rvSetPaused(p) {
   RV.paused = p;
-  const pz = $('#rvPause'); if (pz) pz.hidden = !p;
+  if (!p) RV.noteHold = false;
+  const pz = $('#rvPause'); if (pz) pz.hidden = !p || RV.noteHold;
+  rvNoteBtn();
   const t = $('#rvToggle'); if (t) { t.innerHTML = ic(p ? 'play1' : 'pause'); t.setAttribute('aria-label', p ? '계속' : '일시정지'); }
   cancelAnimationFrame(RV.raf);
   keepAwake(!p);
@@ -799,7 +833,7 @@ function rvTick(ts) {
       RV.spans.forEach(s => s.classList.add('on'));
       RV.phase = 'hold'; RV.holdLeft = p.hold * 1000;
       const note = $('#rvNote');
-      if (p.reviewNote === 'after' && note.innerHTML) note.hidden = false;
+      if (p.reviewNote === 'after' && note.innerHTML) { note.hidden = false; rvNoteBtn(); }
     }
   } else if (RV.phase === 'hold') {
     RV.holdLeft -= dt;
@@ -908,7 +942,7 @@ function settingsHtml() {
     <div class="card"><h2>${ic('play')}조회 모드</h2>
       <div class="srow2"><label class="fl" for="pSpeed">속도 <b id="vSpeed">초당 ${p.speed}글자</b></label><input type="range" id="pSpeed" data-range="speed" min="2" max="30" step="1" value="${p.speed}"></div>
       <div class="srow2"><label class="fl" for="pHold">다 채운 뒤 멈춤 <b id="vHold">${p.hold}초</b></label><input type="range" id="pHold" data-range="hold" min="0" max="10" step="0.5" value="${p.hold}"></div>
-      <div class="srow2"><span class="fl">보충설명</span>${segHtml('reviewNote', [['off', '보이지 않음'], ['after', '다 채운 뒤 표시']], p.reviewNote)}</div>
+      <div class="srow2"><span class="fl">보충설명 자동 표시</span>${segHtml('reviewNote', [['off', '누를 때만'], ['after', '다 채운 뒤 항상']], p.reviewNote)}</div>
     </div>
     <div class="card"><h2>${ic('quiz')}문제 모드</h2>
       <div class="srow2"><span class="fl">문제 유형</span>${segHtml('quizType', [['fixed', '빈칸'], ['len', '길이 빈칸'], ['cho', '초성'], ['mix', '섞기']], p.quizType)}</div>
@@ -933,7 +967,7 @@ function settingsHtml() {
     <p class="ver">Study Manager ${VERSION}</p>
   </div>`;
 }
-const quizTypeHint = t => ({ fixed: '빈칸을 항상 같은 폭 [      ]으로 가립니다', len: '정답 글자 수에 맞춘 폭으로 가립니다', cho: '정답의 초성으로 가립니다 (예: [ㅌㅅㅌ])', mix: '문장마다 세 가지 중 하나를 무작위로 씁니다' }[t] || '');
+const quizTypeHint = t => ({ fixed: '빈칸을 항상 같은 폭 [      ]으로 가립니다', len: '정답 글자 수에 맞춘 폭으로 가립니다', cho: '정답의 초성으로 가립니다 (예: [ㅌㅅㅌ], 숫자는 *)', mix: '문장마다 세 가지 중 하나를 무작위로 씁니다' }[t] || '');
 function exportJson() {
   const blob = new Blob([JSON.stringify(doc, null, 1)], { type: 'application/json' });
   const a = document.createElement('a');
@@ -1166,6 +1200,7 @@ document.addEventListener('click', async e => {
     case 'rv-toggle': rvToggle(); break;
     case 'rv-next': rvNext(); break;
     case 'rv-prev': rvPrev(); break;
+    case 'rv-note': rvNote(); break;
     // ----- 문제 -----
     case 'qz-start': qzStart(); break;
     case 'qz-end': QZ.on = false; renderView(); break;
@@ -1251,13 +1286,13 @@ document.addEventListener('pointerup', e => {
   const dx = e.clientX - swipe.x, dy = e.clientY - swipe.y;
   swipe = null;
   if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.3) { if (dx < 0) rvNext(); else rvPrev(); return; }
-  if (Math.abs(dx) < 12 && Math.abs(dy) < 12 && e.target.closest('#rvStage')) rvToggle();
+  if (Math.abs(dx) < 12 && Math.abs(dy) < 12 && e.target.closest('#rvStage') && !e.target.closest('button')) rvToggle();
 });
 document.addEventListener('pointercancel', () => { swipe = null; });
 document.addEventListener('keydown', e => {
   if (dlg().open || e.target.matches?.('input, textarea')) return;
   if (ui.view === 'review' && RV.on) {
-    if (e.key === ' ') { e.preventDefault(); rvToggle(); } else if (e.key === 'ArrowRight') rvNext(); else if (e.key === 'ArrowLeft') rvPrev();
+    if (e.key === ' ') { e.preventDefault(); rvToggle(); } else if (e.key === 'n' || e.key === 'N') rvNote(); else if (e.key === 'ArrowRight') rvNext(); else if (e.key === 'ArrowLeft') rvPrev();
   } else if (ui.view === 'quiz' && QZ.on) {
     if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); ($('[data-act="qz-all"]') || $('[data-act="qz-ans"][data-v="1"]'))?.click(); }
     else if (e.key === '1') $('[data-act="qz-ans"][data-v="0"]')?.click();

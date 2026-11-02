@@ -331,3 +331,7 @@ button.qb:active{filter:brightness(.95)}
 button.sync{border:0;background:none;height:36px;padding:0 8px;border-radius:10px;max-width:52vw;overflow:hidden;text-overflow:ellipsis}
 button.sync:hover{background:var(--hover)}
 .sync.ok{color:var(--ok)}
+
+/* ---------- 조회: 보충설명 버튼 ---------- */
+.rvnotebtn{align-self:flex-start;height:38px;padding:0 14px}
+.rvnotebtn.on{background:var(--accent-weak);border-color:var(--accent);color:var(--accent-ink)}
