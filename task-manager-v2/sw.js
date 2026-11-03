@@ -3,7 +3,7 @@
 // - 네트워크 먼저: 배포하면 다음 실행부터 바로 새 버전. 3초 안에 응답이 없거나 오프라인이면 캐시로 연다.
 // - 캐시 이름은 같은 도메인의 다른 앱과 겹치지 않게 'tm2-'로 시작한다.
 // - 파일을 추가·삭제하면 FILES를 고치고, 배포할 때마다 VERSION 숫자를 올린다.
-const VERSION = 'tm2-1';
+const VERSION = 'tm2-2';
 const FILES = [
   './', './index.html', './style.css', './manifest.webmanifest', './js/pwa.js', './js/config.js',
   './js/dialogs.js', './js/logs.js', './js/main.js', './js/md.js', './js/ms.js', './js/render.js',

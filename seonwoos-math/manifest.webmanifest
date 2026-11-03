@@ -1,7 +1,7 @@
 {
   "name": "선우의 수학 놀이터",
   "short_name": "수학 놀이터",
-  "id": "./",
+  "id": "/seonwoos-math/",
   "start_url": "./",
   "scope": "./",
   "display": "fullscreen",

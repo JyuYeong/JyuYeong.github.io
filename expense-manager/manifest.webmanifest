@@ -2,7 +2,7 @@
   "name": "Expense Manager",
   "short_name": "Expense",
   "description": "지출을 기록하고 통계·카드 실적을 보는 개인용 앱",
-  "id": "./",
+  "id": "/expense-manager/",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

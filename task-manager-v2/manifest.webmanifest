@@ -2,7 +2,7 @@
   "name": "Task Manager v2",
   "short_name": "Task v2",
   "description": "라벨·주제·작업 이력·오늘 할 일로 Task를 관리하는 개인용 앱",
-  "id": "./",
+  "id": "/task-manager-v2/",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

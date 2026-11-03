@@ -2,7 +2,7 @@
   "name": "Info Manager",
   "short_name": "Info",
   "description": "계정·보안 메모를 암호화해 보관하는 개인용 앱",
-  "id": "./",
+  "id": "/info-manager/",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
