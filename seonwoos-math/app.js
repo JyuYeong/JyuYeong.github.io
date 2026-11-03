@@ -3,9 +3,9 @@ import { renderWrite, previewSVG } from './write.js';
 import { renderAdd } from './add.js';
 import { DIGITS } from './digits.js';
 
-const VERSION = '0.1.0';
+const VERSION = '0.2.0';
 const KEY = 'swm-prefs';
-const DEFAULTS = { speed: 'normal', method: 'A', split: 'second', digitShapes: {}, lastDigit: 1, lastA: 8, lastB: 7 };
+const DEFAULTS = { speed: 'normal', repeat: false, method: 'A', split: 'second', digitShapes: {}, lastA: 8, lastB: 7 };
 
 const prefs = (() => {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; }
@@ -22,6 +22,7 @@ const icons = {
   next: svg('<path d="M8 5 L17 12 L8 19 Z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>'),
   play: svg('<path d="M8 5 L18 12 L8 19 Z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>'),
   pause: svg('<rect x="6" y="5" width="4.2" height="14" rx="1.5" fill="currentColor"/><rect x="13.8" y="5" width="4.2" height="14" rx="1.5" fill="currentColor"/>'),
+  repeat: svg('<path d="M4 11 V9.5 A3.5 3.5 0 0 1 7.5 6 H18" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M15 3 L18.5 6 L15 9" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 13 V14.5 A3.5 3.5 0 0 1 16.5 18 H6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M9 15 L5.5 18 L9 21" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>'),
   gear: svg('<circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.9 1.9M16.6 16.6l1.9 1.9M5.5 18.5l1.9-1.9M16.6 7.4l1.9-1.9" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>'),
 };
 

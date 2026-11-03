@@ -138,21 +138,24 @@ export function build(a, b, opt) {
   const order = !carry ? [...keyA, ...keyB]
     : (opt.method === 'B' && second) ? [...keyA, mRod, ...keyB] : [...keyA, ...keyB, mRod];
   const ones = carry ? restIds : [...aOnes, ...bOnes];
+  // 낱개(1)가 먼저 맨 아래 자리로 내려가 자리를 잡고, 그다음 10 막대들이 위에서 차례로 자리를 잡는다
+  const oy = BY + order.length * RP;
+  ones.forEach((id, i) => Object.assign(cubes[id], { x: CX + i * LP, y: oy, d: i * 70, z: 3 }));
+  const O = ones.length, rd = O ? O * 70 + 650 : 0;
   order.forEach((k, ri) => {
     const y = BY + ri * RP;
-    rods[k].ids.forEach((id, i) => Object.assign(cubes[id], { x: CX + i * TP, y, d: ri * 110 }));
-    Object.assign(rods[k], rodBox(CX, y), { d: ri * 110 });
+    rods[k].ids.forEach((id, i) => Object.assign(cubes[id], { x: CX + i * TP, y, d: rd + ri * 110 }));
+    Object.assign(rods[k], rodBox(CX, y), { d: rd + ri * 110 });
   });
-  const oy = BY + order.length * RP, od = order.length * 110 + 250;
-  ones.forEach((id, i) => Object.assign(cubes[id], { x: CX + i * LP, y: oy, d: od + i * 60 }));
+  const od = rd + order.length * 110 + 300;
   labels.hA.o = 0; labels.hB.o = 0; labels.plus.o = 0;
-  const T = order.length * 10, O = ones.length;
+  const T = order.length * 10;
   if (T) labels.sumT = { x: CX + 9 * TP + CUBE + 66, y: BY + ((order.length - 1) * RP + CUBE) / 2, t: String(T), o: 1, d: od, cls: 'sum left' };
-  if (O) labels.sumO = { x: CX + (O - 1) * LP + CUBE + 18, y: oy + CUBE / 2, t: String(O), o: 1, d: od + O * 60, cls: 'sum left' };
+  if (O) labels.sumO = { x: CX + (O - 1) * LP + CUBE + 18, y: oy + CUBE / 2, t: String(O), o: 1, d: O * 70 + 400, cls: 'sum left' };
   let main = (T && O) ? `= ${T} + ${O}` : `= ${total}`;
   if (main === formula.main) main = `= ${total}`;
   formula = { top, main };
-  const combineWait = od + O * 60 + 1600;
+  const combineWait = od + 1500;
   if (main !== `= ${total}` || total === 100) {
     snap('combine', combineWait);
     noDelay();
@@ -337,6 +340,7 @@ function renderPlay(root, ctx, a, b) {
       d.style.transitionDelay = instant ? '0ms' : `${c.d}ms`;
       d.style.transform = `translate(${c.x}px, ${c.y}px) scale(${sc})`;
       d.style.opacity = o;
+      d.style.zIndex = (s && c.z) || '';
     }
     for (const k in els) {
       if (k.startsWith('r:')) {
@@ -420,9 +424,8 @@ function renderPlay(root, ctx, a, b) {
     if (p[key] === bt.dataset.v) return;
     p[key] = bt.dataset.v; ctx.save(); markOpts();
     stopAuto();
-    // 방법을 바꾸면 두 수가 놓인 단계부터 다시
+    // 방법을 바꾸면 처음(빈 화면)부터 다시
     setup();
-    go(1, true);
   });
 
   markOpts();

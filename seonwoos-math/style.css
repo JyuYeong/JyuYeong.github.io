@@ -119,8 +119,15 @@ svg { display: block; }
 .pen-shadow { fill: #6B5A80; }
 .board.done .ink { animation: inkpop .5s ease-out; transform-origin: 50px 70px; }
 @keyframes inkpop { 40% { transform: scale(1.05); } }
+.board-btns { position: absolute; right: 0; bottom: 0; display: flex; gap: 10px; align-items: center; }
+.repeat {
+  height: 52px; padding: 0 16px; border-radius: 999px; display: flex; align-items: center; gap: 6px;
+  background: #fff; color: var(--muted); font-size: 19px; box-shadow: 0 4px 0 #EED9B6;
+}
+.repeat svg { width: 24px; height: 24px; }
+.repeat.on { background: var(--green); color: #fff; box-shadow: 0 4px 0 #24946A; }
 .replay {
-  position: absolute; right: 0; bottom: 0; width: 64px; height: 64px; border-radius: 50%;
+  width: 64px; height: 64px; border-radius: 50%;
   background: var(--yellow); color: #fff; display: grid; place-items: center; box-shadow: 0 5px 0 #E0A520;
 }
 .replay svg { width: 34px; height: 34px; }

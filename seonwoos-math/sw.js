@@ -1,5 +1,5 @@
 // 오프라인 캐시: 파일을 바꿔 배포할 때마다 VERSION을 올린다.
-const VERSION = 'swm-0.1.0';
+const VERSION = 'swm-0.2.0';
 const FILES = [
   './', './index.html', './style.css', './app.js', './write.js', './add.js', './digits.js',
   './manifest.webmanifest', './icons/icon.svg', './icons/icon-180.png', './icons/icon-192.png',

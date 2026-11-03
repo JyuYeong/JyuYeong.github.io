@@ -7,23 +7,45 @@ const HAND_SCALE = 0.56;
 const HOME = { x: 128, y: 150 }; // 손이 들어오고 나가는 자리 (오른쪽 아래, 이때는 흐리게 숨김)
 
 // 손 그림 (연필 끝이 원점, 연필은 +x 방향. 그룹 전체를 -58° 돌려 오른쪽 위로 눕힌다)
+// 손가락은 둥근 끝 굵은 선 두 겹(테두리색 → 살색)으로 그린다
 const HAND_SVG = `
 <g class="hand-art" transform="rotate(-58)">
-  <ellipse cx="150" cy="44" rx="17" ry="31" fill="#7EC4F0" stroke="#4E97C7" stroke-width="2.5"/>
-  <path d="M60 22 C66 4 92 -2 116 6 C140 14 150 36 144 58 C138 78 112 86 90 78 C72 72 56 44 60 22 Z" fill="#FFD9BC" stroke="#E2A27E" stroke-width="2.5"/>
-  <path d="M104 62 C112 66 122 66 130 60" fill="none" stroke="#E2A27E" stroke-width="2" stroke-linecap="round"/>
-  <ellipse cx="50" cy="15" rx="15" ry="8.5" fill="#FFD0AE" stroke="#E2A27E" stroke-width="2.5"/>
+  <!-- 소매 -->
+  <path d="M134 18 C150 2 176 12 178 40 C180 66 162 84 140 78 Z" fill="#7EC4F0" stroke="#4E97C7" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="M134 18 C144 36 146 58 140 78" fill="none" stroke="#4E97C7" stroke-width="2.5"/>
+  <!-- 손등·손바닥 -->
+  <path d="M92 -14 C108 -26 132 -20 140 -4 C150 16 150 48 126 66 C106 77 86 68 80 52 C76 40 80 26 90 18 C84 6 84 -6 92 -14 Z" fill="#FFD9BC" stroke="#E2A27E" stroke-width="2.5" stroke-linejoin="round"/>
+  <path d="M124 -12 C132 -4 136 8 136 18" fill="none" stroke="#F2BE9A" stroke-width="2" stroke-linecap="round"/>
+  <!-- 접은 약지·새끼 -->
+  <g stroke-linecap="round">
+    <path d="M100 44 L82 40" stroke="#E2A27E" stroke-width="17"/><path d="M100 44 L82 40" stroke="#F9CBA8" stroke-width="12.5"/>
+    <path d="M108 60 L90 56" stroke="#E2A27E" stroke-width="15"/><path d="M108 60 L90 56" stroke="#F9CBA8" stroke-width="10.5"/>
+  </g>
+  <!-- 가운뎃손가락 (연필 아래 받침) -->
+  <g stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M96 24 L66 20 L44 11" stroke="#E2A27E" stroke-width="17"/><path d="M96 24 L66 20 L44 11" stroke="#FCD2B1" stroke-width="12.5"/>
+  </g>
+  <!-- 연필 -->
   <polygon points="0,0 9,-2.6 9,2.6" fill="#454545"/>
   <polygon points="9,-2.6 23,-8 23,8 9,2.6" fill="#F6CF9B" stroke="#D9A86A" stroke-width="1"/>
-  <rect x="23" y="-8" width="92" height="16" fill="#FFC93C" stroke="#E0A520" stroke-width="1.2"/>
-  <rect x="23" y="-2.2" width="92" height="4.4" fill="#FFB321" opacity=".55"/>
-  <rect x="115" y="-8.6" width="9" height="17.2" fill="#C9CED6" stroke="#9AA1AB" stroke-width="1"/>
-  <rect x="124" y="-8" width="13" height="16" rx="4" fill="#FF8FA8" stroke="#E46A87" stroke-width="1"/>
-  <rect x="34" y="-14" width="56" height="15" rx="7.5" fill="#FFD9BC" stroke="#E2A27E" stroke-width="2.5"/>
-  <path d="M68 -12 C66 -8 66 -4 68 0" fill="none" stroke="#E2A27E" stroke-width="1.6" stroke-linecap="round"/>
-  <ellipse cx="62" cy="9" rx="17" ry="9" transform="rotate(-12 62 9)" fill="#FFD9BC" stroke="#E2A27E" stroke-width="2.5"/>
-  <ellipse cx="49" cy="7" rx="4" ry="3" fill="#FFF1E6" opacity=".9"/>
-</g>`;
+  <rect x="23" y="-8" width="108" height="16" fill="#FFC93C" stroke="#E0A520" stroke-width="1.2"/>
+  <rect x="23" y="-2.2" width="108" height="4.4" fill="#FFB321" opacity=".55"/>
+  <rect x="131" y="-8.6" width="9" height="17.2" fill="#C9CED6" stroke="#9AA1AB" stroke-width="1"/>
+  <rect x="140" y="-8" width="13" height="16" rx="4" fill="#FF8FA8" stroke="#E46A87" stroke-width="1"/>
+  <!-- 집게손가락 (연필 위) -->
+  <g stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M100 -12 L72 -17 L42 -9" stroke="#E2A27E" stroke-width="17"/><path d="M100 -12 L72 -17 L42 -9" stroke="#FFD9BC" stroke-width="12.5"/>
+  </g>
+  <ellipse cx="44" cy="-11" rx="5" ry="3.4" transform="rotate(-16 44 -11)" fill="#FFEDE0" stroke="#E9B496" stroke-width="1.2"/>
+  <path d="M73 -22 C70 -19 70 -15 72 -12" fill="none" stroke="#E2A27E" stroke-width="1.6" stroke-linecap="round"/>
+  <!-- 엄지 -->
+  <g stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M112 30 L82 16 L58 6" stroke="#E2A27E" stroke-width="18.5"/><path d="M112 30 L82 16 L58 6" stroke="#FFD9BC" stroke-width="14"/>
+  </g>
+  <ellipse cx="57" cy="3.6" rx="5.4" ry="3.6" transform="rotate(22 57 3.6)" fill="#FFEDE0" stroke="#E9B496" stroke-width="1.2"/>
+  <path d="M84 10 C82 14 82 18 85 21" fill="none" stroke="#E2A27E" stroke-width="1.6" stroke-linecap="round"/>
+</g>
+`;
 
 function el(tag, attrs = {}, parent) {
   const e = document.createElementNS(NS, tag);
@@ -37,7 +59,7 @@ const ease = t => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 export class Writer {
   constructor(svg) {
     this.svg = svg;
-    svg.setAttribute('viewBox', '-34 -16 190 172');
+    svg.setAttribute('viewBox', '-34 -52 190 208'); // 위쪽은 손이 들어갈 자리
     // 쓰기 칸 (깍두기 공책처럼 점선 십자)
     const guide = el('g', { class: 'guide' }, svg);
     el('rect', { x: -10, y: -6, width: 120, height: 152, rx: 14, class: 'guide-box' }, guide);
@@ -91,6 +113,15 @@ export class Writer {
     this.svg.classList.remove('done');
   }
 
+  // 아무 숫자도 고르지 않은 빈 칸
+  clear() {
+    this.stop();
+    this.gGhost.innerHTML = ''; this.gInk.innerHTML = ''; this.gNum.innerHTML = '';
+    this.paths = [];
+    this.setHand(HOME.x, HOME.y, 1, 0);
+    this.svg.classList.remove('done');
+  }
+
   // 획 그리기 일정표 만들기
   plan(speed) {
     const v = SPEEDS[speed] || SPEEDS.normal;
@@ -121,6 +152,7 @@ export class Writer {
 
   play(speed, onDone) {
     this.stop();
+    if (!this.paths || !this.paths.length) return;
     this.reset();
     const segs = this.plan(speed);
     let idx = 0, t0 = performance.now();
@@ -214,7 +246,10 @@ export function renderWrite(root, ctx) {
     <div class="write-body">
       <div class="board-wrap">
         <svg class="board" aria-label="숫자 쓰기 칸"></svg>
-        <button class="replay" aria-label="다시 보기">${ctx.icons.replay}</button>
+        <div class="board-btns">
+          <button class="repeat" aria-label="자동 반복" aria-pressed="false">${ctx.icons.repeat}<span>반복</span></button>
+          <button class="replay" aria-label="다시 보기">${ctx.icons.replay}</button>
+        </div>
       </div>
       <div class="digit-pad">
         ${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button class="dbtn c${n}" data-n="${n}">${n}</button>`).join('')}
@@ -224,31 +259,48 @@ export function renderWrite(root, ctx) {
 
   const svg = root.querySelector('.board');
   const w = new Writer(svg);
-  let current = prefs.lastDigit || 1;
+  const replayBtn = root.querySelector('.replay'), repeatBtn = root.querySelector('.repeat');
+  let current = 0, timer = 0; // 들어올 때마다 아무것도 고르지 않은 상태
 
   const markSpeed = () => root.querySelectorAll('[data-speed]').forEach(b =>
     b.classList.toggle('on', b.dataset.speed === prefs.speed));
-  const markDigit = () => root.querySelectorAll('.dbtn').forEach(b =>
-    b.classList.toggle('on', +b.dataset.n === current));
+  const markDigit = () => {
+    root.querySelectorAll('.dbtn').forEach(b => b.classList.toggle('on', +b.dataset.n === current));
+    replayBtn.disabled = !current;
+  };
+  const markRepeat = () => {
+    repeatBtn.classList.toggle('on', !!prefs.repeat);
+    repeatBtn.setAttribute('aria-pressed', String(!!prefs.repeat));
+  };
 
-  const show = (n, autoplay = true) => {
-    current = n; prefs.lastDigit = n; save();
+  // 쓰기: 반복이 켜져 있으면 끝난 뒤 잠깐 쉬고 다시
+  const run = () => {
+    clearTimeout(timer);
+    if (!current) return;
+    w.play(prefs.speed, () => { if (prefs.repeat) timer = setTimeout(run, 1300); });
+  };
+  const show = n => {
+    current = n;
     markDigit();
     w.load(strokesOf(n, prefs.digitShapes));
-    if (autoplay) w.play(prefs.speed);
+    run();
   };
 
   root.querySelector('.digit-pad').addEventListener('click', e => {
     const b = e.target.closest('.dbtn'); if (b) show(+b.dataset.n);
   });
-  root.querySelector('.replay').addEventListener('click', () => w.play(prefs.speed));
-  svg.addEventListener('click', () => w.play(prefs.speed));
+  replayBtn.addEventListener('click', run);
+  svg.addEventListener('click', run);
+  repeatBtn.addEventListener('click', () => {
+    prefs.repeat = !prefs.repeat; save(); markRepeat();
+    if (prefs.repeat && current && !w.raf) run();
+  });
   root.querySelector('.speed').addEventListener('click', e => {
     const b = e.target.closest('[data-speed]'); if (!b) return;
-    prefs.speed = b.dataset.speed; save(); markSpeed(); w.play(prefs.speed);
+    prefs.speed = b.dataset.speed; save(); markSpeed(); run();
   });
-  markSpeed();
-  show(current);
+  markSpeed(); markRepeat();
+  w.clear(); markDigit();
   window.__writer = w; // 테스트용
-  return () => w.stop();
+  return () => { clearTimeout(timer); w.stop(); };
 }
