@@ -1,4 +1,5 @@
-// Google Drive 동기화 (M3): im-meta.json(평문, 비밀 없음) + im-personal.json·im-work.json(암호문)
+// Google Drive 동기화 (M3): im-meta.json(평문, 비밀 없음) + im-personal.json(암호문)
+// M3.6: 업무 트리를 없애면서 Drive의 업무 파일(im-work.json과 그 백업)은 동기화 때 휴지통으로 보낸다
 // 항목별 최신 수정 우선 병합(Task Manager M3.1과 같은 규칙), 금고 ID가 다르면 멈추고 사용자에게 묻는다
 import { CLIENT_ID, FOLDER_ID, SCOPE } from './config.js';
 import * as C from './crypto.js';
@@ -6,8 +7,10 @@ import { mergeDocs, sameEntities } from './store.js';
 
 const API = 'https://www.googleapis.com/drive/v3';
 const UP = 'https://www.googleapis.com/upload/drive/v3';
-export const FILES = { meta: 'im-meta.json', personal: 'im-personal.json', work: 'im-work.json' };
-const KINDS = ['personal', 'work'];
+export const FILES = { meta: 'im-meta.json', personal: 'im-personal.json' };
+const KINDS = ['personal'];
+// 없앤 업무 트리 파일: im-work.json, im-backup-…-work.json, im-replaced-…-work.json
+const OLD_WORK = /^im-(work|backup-\d{8}-work|replaced-[0-9T]+-work)\.json$/;
 const KEEP_BACKUPS = 14;
 
 const ls = (k, v) => {
@@ -21,11 +24,11 @@ const todayKST = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul'
 const nowLabel = () => new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
 
 // ---------- 상태 ----------
-// hooks.get() → { unlocked, meta, dek, personal, work }
+// hooks.get() → { unlocked, meta, dek, personal }
 let hooks = { get: () => ({}), applyMeta: async () => {}, applyDoc: async () => {}, onConflict: () => {}, onStatus: () => {} };
 let token = null, tokenExp = 0, client = null, gisPromise = null, cur = null;
 let status = 'off', detail = '', lastSync = ls('im-last');
-let syncing = false, pending = false, timer = null;
+let syncing = false, pending = false, timer = null, workPurged = false;
 export const isSignedIn = () => ls('im-signed') === '1';
 export const getState = () => ({ status, detail, lastSync, signedIn: isSignedIn() });
 function setStatus(s, d = '') { status = s; detail = d; hooks.onStatus(getState()); }
@@ -144,6 +147,15 @@ async function dailyBackup(kind, text) {
   for (const f of (all.files || []).slice(KEEP_BACKUPS)) await trash(f.id);
 }
 
+// 업무 트리 파일 정리: 페이지를 연 뒤 첫 동기화에서 한 번 (예전 버전을 연 기기가 다시 올렸어도 지운다)
+async function purgeWorkFiles() {
+  if (workPurged) return;
+  const r = await api(`${API}/files?q=${qs(inFolder)}&pageSize=200&fields=files(id,name)`);
+  for (const f of r.files || []) if (OLD_WORK.test(f.name)) await trash(f.id);
+  for (const k of ['im-fid-work', 'im-backup-work']) ls(k, null);
+  workPurged = true;
+}
+
 // ---------- 동기화 ----------
 // 잠금을 푼 상태에서만 동작한다 (병합하려면 데이터 키가 필요)
 export async function syncNow() {
@@ -198,6 +210,7 @@ export async function syncNow() {
       }
       if (!done) throw new Error('다른 기기와 저장이 겹쳐 중단했습니다. 잠시 후 다시 시도합니다');
     }
+    await purgeWorkFiles().catch(() => {});
     lastSync = nowLabel();
     ls('im-last', lastSync);
     setStatus('ok');
@@ -228,7 +241,7 @@ export async function fetchVault() {
   return out;
 }
 // 이 기기 금고로 Drive를 덮어쓴다. 덮어쓰기 전 Drive 파일은 im-replaced-…로 남긴다
-export async function overwriteRemote({ meta, personal, work }) {
+export async function overwriteRemote({ meta, personal }) {
   await ensureToken();
   const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 13);
   for (const kind of ['meta', ...KINDS]) {
@@ -237,7 +250,6 @@ export async function overwriteRemote({ meta, personal, work }) {
   }
   await writeFile('meta', meta);
   if (personal) await writeFile('personal', personal);
-  if (work) await writeFile('work', work);
   setStatus('idle');
 }
 export function clearConflict() { if (status === 'conflict') setStatus('idle'); }
@@ -255,7 +267,7 @@ export async function signIn() {
 // 이 기기에서만 연결을 끊는다. 클라이언트 ID를 Task Manager와 같이 쓰므로 Google 권한(revoke)은 건드리지 않는다
 export function signOut() {
   token = null; tokenExp = 0; clearTimeout(timer);
-  for (const k of ['im-signed', 'im-fid-meta', 'im-fid-personal', 'im-fid-work', 'im-last']) ls(k, null);
+  for (const k of ['im-signed', 'im-fid-meta', 'im-fid-personal', 'im-last']) ls(k, null);
   lastSync = null;
   setStatus('off');
 }

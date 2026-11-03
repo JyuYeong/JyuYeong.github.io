@@ -211,53 +211,12 @@ body.search-open .search{display:flex}
 .search input::-webkit-search-cancel-button{display:none}
 .row .vv{font-weight:400;color:var(--muted);margin-left:2px}
 
-/* ---------- M2: 업무 트리 ---------- */
+/* ---------- 상단 바 공통 ---------- */
 .bar{flex-wrap:wrap}
-.bar .acts{margin-left:auto;display:flex;align-items:center;gap:6px}
-.bar .acts .btn{height:40px;padding:0 12px;margin:0}
 .bar h2{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:50%}
-.crumbs{flex-basis:100%;display:flex;align-items:center;gap:2px;overflow-x:auto;scrollbar-width:none;margin:2px -6px 0}
-.crumbs::-webkit-scrollbar{display:none}
-.crumb{display:inline-flex;align-items:center;gap:4px;height:34px;padding:0 6px;border:0;border-radius:8px;background:none;font-size:13.5px;color:var(--accent-ink);white-space:nowrap;flex:none;max-width:220px;overflow:hidden;text-overflow:ellipsis}
-.crumb .ic{width:15px;height:15px}
-.crumb:hover{background:var(--hover)}
-.crumb[aria-current="page"]{color:var(--ink);font-weight:600}
-.csep{color:var(--muted);flex:none}
-.card.fold .fic{width:22px;height:22px;color:var(--accent);margin:0 5px}
-.grp.fields .frow:first-child{border-top:0}
-.frow{display:grid;grid-template-columns:minmax(80px,30%) 1fr auto;align-items:start;gap:2px 12px;padding:8px 6px 8px 14px;border-top:1px solid var(--line)}
-.frow[aria-current="true"]{background:var(--accent-weak);box-shadow:inset 3px 0 0 var(--accent)}
-.fk{display:flex;align-items:center;gap:6px;min-height:36px;font-size:13.5px;font-weight:700;color:var(--ink2);overflow-wrap:anywhere;min-width:0}
-.fk .kl{width:13px;height:13px;color:var(--muted)}
-.fvw{min-width:0;display:flex;align-items:flex-start;min-height:36px}
-.fvw .fv{padding-top:7px}
-.fval{font-family:var(--mono);font-size:14px;white-space:pre-wrap;overflow-wrap:anywhere}
-.fval.multi{max-height:200px;overflow:auto;padding:7px 10px;background:var(--soft);border-radius:8px;width:100%;font-size:12.5px}
-.maskbtn{display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 10px;border:1px solid var(--line2);border-radius:10px;background:var(--soft);color:var(--mask)}
-.maskbtn span{letter-spacing:.15em}
-.maskbtn small{font-size:12px}
-.maskbtn .ic{width:16px;height:16px;color:var(--icon)}
-.fa{display:flex;align-items:center}
-.qk{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
-.qk .chip{height:34px;padding:0 12px;font-size:13px;font-family:var(--mono)}
-.qk .chip[aria-pressed="true"]{background:var(--accent-weak);border-color:var(--accent);color:var(--accent-ink)}
-textarea.in.mono{font-family:var(--mono);font-size:14px;min-height:0}
-textarea.in.hidev{-webkit-text-security:disc}
-.inwrap textarea.in{padding-right:48px}
-.empty .btns{display:flex;gap:8px}
 .empty .hint{max-width:320px}
-.treebox{max-height:55dvh;overflow-y:auto;border:1px solid var(--line);border-radius:12px;padding:4px}
-.mi.tree{min-height:44px;gap:8px}
-.mi.tree .t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mi.tree:disabled{opacity:.4}
-.mi.tree .ic{color:var(--accent)}
 @media (max-width:519px){
   .sync:not(.warn){display:none}
-  .frow{grid-template-columns:1fr auto}
-  .frow .fk{grid-column:1;grid-row:1}
-  .frow .fa{grid-column:2;grid-row:1}
-  .frow .fvw{grid-column:1/-1;grid-row:2;padding-right:8px}
-  .fk{min-height:32px}
   .bar h2{max-width:40%}
 }
 
@@ -268,52 +227,6 @@ textarea.in.hidev{-webkit-text-security:disc}
 .xrow .in{height:42px;font-size:15px}
 .xrow .xv{font-family:var(--mono)}
 @media (max-width:420px){.xrow{grid-template-columns:1fr auto}.xrow .xk{grid-column:1}.xrow .xvw{grid-column:1/-1;grid-row:2}.xrow>.icbtn{grid-column:2;grid-row:1}}
-
-/* ---------- M3.2: 트리 보기 ---------- */
-.mseg{display:inline-flex;border:1px solid var(--line2);border-radius:10px;overflow:hidden;background:var(--surface);flex:none}
-.mseg button{display:inline-flex;align-items:center;gap:5px;height:34px;padding:0 10px;border:0;border-left:1px solid var(--line2);background:none;font-size:13px;color:var(--ink2)}
-.mseg button:first-child{border-left:0}
-.mseg button .ic{width:15px;height:15px}
-.mseg button[aria-pressed="true"]{background:var(--accent-weak);color:var(--accent-ink);font-weight:600}
-.bar .mseg{margin-left:10px}
-.bar .mrow{flex-basis:100%;display:none;order:9}
-.icbtn.xs{width:30px;height:30px;border-radius:8px;flex:none}
-.icbtn.xs .ic{width:15px;height:15px}
-.tree{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:6px 4px;font-size:13px;line-height:1.35;flex:none}
-.tr{display:flex;align-items:center;gap:4px;min-height:32px;padding:0 4px 0 6px;border-radius:6px}
-.tr:hover{background:var(--hover)}
-.tr[aria-current="true"]{background:var(--accent-weak)}
-.ind{align-self:stretch;width:16px;flex:none;position:relative}
-.ind::before{content:"";position:absolute;left:7px;top:0;bottom:0;border-left:1px solid var(--line2)}
-.tt{display:flex;align-items:center;gap:4px;flex:1;min-width:0;height:32px;border:0;background:none;padding:0;text-align:left;font-size:13px;color:var(--ink)}
-.tt:disabled{cursor:default;opacity:1}
-.tt .car{width:14px;height:14px;color:var(--muted)}
-.tt:disabled .car{visibility:hidden}
-.tt .tfi{width:15px;height:15px;color:var(--accent)}
-.tn{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tc{font-size:11.5px;color:var(--muted);flex:none}
-.tsp{width:14px;flex:none} /* 폴더 줄의 펼침 화살표 자리: 안내선은 그대로, 항목 이름만 폴더 아이콘 위치에 맞춘다 */
-.tk{display:block;font-weight:600;color:var(--ink2);flex:0 1 auto;min-width:3em;max-width:60%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tk .kl{vertical-align:-1px;margin-right:3px}
-.tfld>.icbtn,.tfld>.tsep,.tfld>.tv.tm{flex-shrink:0}
-.tk .kl{width:11px;height:11px;color:var(--muted)}
-.tsep{color:var(--muted);flex:none}
-.tv{flex:1;min-width:0;font-family:var(--mono);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;user-select:text;-webkit-user-select:text;text-align:left}
-.tv.multi{white-space:pre-wrap;overflow-wrap:anywhere;padding:7px 0}
-.tfld:has(.tv.multi){align-items:flex-start}
-.tfld:has(.tv.multi) .tk,.tfld:has(.tv.multi) .tsep{padding-top:7px}
-.tfld:has(.tv.multi) .icbtn{margin-top:1px}
-.tv.none{color:var(--muted);font-family:inherit}
-button.tv{border:0;background:none;padding:0;height:28px;color:inherit}
-.tv.tm{color:var(--mask);letter-spacing:.18em;flex:none;padding:0 8px;border:1px dashed var(--line2);border-radius:6px;height:24px;font-size:12px}
-.tv.tmore small{color:var(--muted);font-family:inherit}
-@media (max-width:519px){
-  .bar .mrow{display:flex}
-  .bar>.mseg{display:none}
-  .ind{width:12px}
-  .ind::before{left:5px}
-  .tree{font-size:12.5px}
-}
 
 /* ---------- 유틸 ---------- */
 .only-narrow{display:flex}

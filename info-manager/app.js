@@ -1,10 +1,11 @@
-// Info Manager M1: 처음 설정(PIN·복구 키), 잠금·해제·자동 잠금, 개인용 계정·보안 메모, 소셜 관리 (이 기기에만 저장)
+// Info Manager: 처음 설정(PIN·복구 키), 잠금·해제·자동 잠금, 개인용 계정·보안 메모, 소셜 관리, Drive 동기화
+// M3.6: 업무 트리는 Task Manager v2로 옮겨 없앴다 (데이터도 이 기기·Drive에서 지운다)
 import * as C from './crypto.js';
 import * as S from './store.js';
 import * as Q from './search.js';
 import * as Sync from './sync.js';
 
-export const VERSION = 'M3.3';
+export const VERSION = 'M3.6';
 const IDLE_MS = 5 * 60 * 1000;
 const MAX_FAILS = 5;
 const FAIL_WAIT_MS = 30 * 1000;
@@ -22,7 +23,6 @@ const P = {
   key: '<circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M14 9l2 2"/>',
   user: '<circle cx="12" cy="8" r="4"/><path d="M4 20a8 8 0 0116 0"/>',
   note: '<rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/>',
-  tree: '<path d="M4 6a2 2 0 012-2h3l2 2h7a2 2 0 012 2v1H4z"/><path d="M4 9h16v9a2 2 0 01-2 2H6a2 2 0 01-2-2z"/>',
   link: '<path d="M10 14a4 4 0 005.66 0l3-3a4 4 0 00-5.66-5.66l-1 1"/><path d="M14 10a4 4 0 00-5.66 0l-3 3a4 4 0 005.66 5.66l1-1"/>',
   gear: '<path d="M5 8h9M18 8h1M5 16h1M10 16h9"/><circle cx="16" cy="8" r="2"/><circle cx="8" cy="16" r="2"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
@@ -34,17 +34,7 @@ const P = {
   warn: '<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17h.01"/>',
   img: '<rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M20 16l-5-5-7 8"/>',
   del: '<path d="M9 6h11v12H9l-6-6z"/><path d="M12 10l4 4M16 10l-4 4"/>',
-  folder: '<path d="M4 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2z"/>',
-  folderPlus: '<path d="M4 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2z"/><path d="M12 10.5v5M9.5 13h5"/>',
-  field: '<path d="M5 7h14M5 12h9M5 17h6"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>',
-  move: '<path d="M4 7a2 2 0 012-2h4l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H6a2 2 0 01-2-2z"/><path d="M10 13h5M13 10.5l2.5 2.5-2.5 2.5"/>',
-  chevD: '<path d="M7 10l5 5 5-5"/>',
-  expand: '<path d="M7 9l5-5 5 5M7 15l5 5 5-5"/>',
-  collapse: '<path d="M7 4l5 5 5-5M7 20l5-5 5 5"/>',
-  enter: '<path d="M14 4h4a2 2 0 012 2v12a2 2 0 01-2 2h-4"/><path d="M4 12h11M11 8l4 4-4 4"/>',
-  branch: '<path d="M4 5h6M7 5v14h5M7 12h5"/><rect x="13" y="10" width="7" height="4" rx="1"/><rect x="13" y="17" width="7" height="4" rx="1"/>',
-  home: '<path d="M4 11l8-6 8 6v8a1 1 0 01-1 1h-4v-5h-6v5H5a1 1 0 01-1-1z"/>',
   shield: '<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/>',
 };
 const ic = (name, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[name]}</svg>`;
@@ -55,11 +45,10 @@ const LOGO = `<svg class="glogo" viewBox="0 0 64 64" aria-hidden="true"><rect wi
 let meta = null;    // 평문 메타 (비밀 없음)
 let dek = null;     // 데이터 키 (메모리에만)
 let pdoc = null;    // 개인용 문서 (복호화본)
-let wdoc = null;    // 업무용 문서 (M2에서 사용)
 let unlocked = false;
-const ui = { view: 'accounts', sel: null, draft: null, revealed: new Set(), path: null, hl: null, q: '', searchOpen: false, workMode: 'folder', open: new Set() };
-try { if (localStorage.getItem('im-workview') === 'tree') ui.workMode = 'tree'; } catch { /* 무시 */ }
-const VIEWS = { accounts: '계정', notes: '보안 메모', work: '업무', social: '소셜 관리' };
+const ui = { view: 'accounts', sel: null, draft: null, revealed: new Set(), q: '', searchOpen: false };
+try { localStorage.removeItem('im-workview'); } catch { /* 무시 */ } // 없앤 업무 트리의 보기 설정
+const VIEWS = { accounts: '계정', notes: '보안 메모', social: '소셜 관리' };
 
 // ---------- 다른 탭 ----------
 // 같은 기기에서 두 탭이 동시에 열려 서로 덮어쓰지 않도록, 한 탭이 열리면 나머지 탭은 잠근다
@@ -72,7 +61,7 @@ bc?.addEventListener('message', e => {
 
 // ---------- 저장 ----------
 let saveTimer = null, saving = Promise.resolve(), saveOk = true;
-const dirty = new Set(); // 'personal' | 'work'
+const dirty = new Set(); // 'personal'
 // 바뀐 문서를 표시하고 잠시 뒤 저장한다
 function save(kind = 'personal') {
   dirty.add(kind);
@@ -85,7 +74,7 @@ function flush(noSync = false) {
   const key = dek;
   if (!unlocked || !key || !dirty.size) return saving;
   const jobs = [...dirty]; dirty.clear();
-  const docs = { personal: pdoc, work: wdoc };
+  const docs = { personal: pdoc };
   saving = saving.then(async () => {
     const entries = {};
     for (const k of jobs) {
@@ -238,7 +227,7 @@ const setup = { pin: null, vault: null };
 function setupIntro(msg = '') {
   pad = null;
   showGate(`${LOGO}<h1>Info Manager</h1>
-    <p>개인 계정과 업무 정보를 암호화해 보관하고, Google Drive로 기기 간에 동기화합니다.</p>
+    <p>개인 계정과 보안 메모를 암호화해 보관하고, Google Drive로 기기 간에 동기화합니다.</p>
     ${testWarning()}
     ${S.storageOk ? '' : `<div class="warn">${ic('warn')}<div><b>이 브라우저는 저장소를 쓸 수 없습니다</b>시크릿 창이거나 저장소가 막혀 있으면 닫을 때 데이터가 사라집니다.</div></div>`}
     ${msg ? `<p class="gmsg box">${esc(msg)}</p>` : ''}
@@ -263,13 +252,12 @@ async function importVault() {
 async function storeVault(v) {
   const entries = { meta: v.meta };
   if (v.personal) entries.personal = v.personal;
-  if (v.work) entries.work = v.work;
   await S.clearAll();
   await S.putMany(entries);
   meta = v.meta;
 }
 function testWarning() {
-  return `<div class="warn">${ic('warn')}<div><b>1차 테스트 단계입니다</b>PIN 4자리만으로 보호되므로 실제 비밀번호나 고객사 정보는 넣지 말고 테스트용 데이터만 넣어 주세요.</div></div>`;
+  return `<div class="warn">${ic('warn')}<div><b>1차 테스트 단계입니다</b>PIN 4자리만으로 보호되므로 실제 비밀번호는 넣지 말고 테스트용 데이터만 넣어 주세요.</div></div>`;
 }
 function setupPin1(msg = '') {
   showGate(padHtml({ title: '새 PIN 4자리', sub: '잠금을 풀 때 쓸 숫자 4자리를 입력하세요', msg }));
@@ -314,10 +302,9 @@ async function setupFinish() {
   if (head !== setup.vault.recovery.slice(0, 4)) { setupConfirm('복구 키 앞 4자리가 맞지 않습니다'); return; }
   const v = setup.vault;
   const p = S.emptyPersonal(); S.seedPresets(p);
-  const w = S.emptyWork();
-  const ok = await S.putMany({ meta: v.meta, personal: await C.encryptDoc(v.dek, p, 'personal'), work: await C.encryptDoc(v.dek, w, 'work') });
+  const ok = await S.putMany({ meta: v.meta, personal: await C.encryptDoc(v.dek, p, 'personal') });
   setup.pin = null; setup.vault = null;
-  meta = v.meta; dek = v.dek; pdoc = p; wdoc = w;
+  meta = v.meta; dek = v.dek; pdoc = p;
   enterApp(ok ? '설정을 마쳤습니다' : '저장소를 쓸 수 없어 이 창을 닫으면 사라집니다');
 }
 
@@ -340,12 +327,11 @@ function lockScreen(msg = '', info = true) {
 }
 async function openWith(key) {
   if (!meta.vault_id) { meta = { ...meta, vault_id: C.newVaultId() }; await S.put('meta', meta); } // M1·M2에서 만든 금고
-  const [pb, wb] = await Promise.all([S.get('personal'), S.get('work')]);
+  const pb = await S.get('personal');
   const p = pb ? await C.decryptDoc(key, pb, 'personal') : (() => { const d = S.emptyPersonal(); S.seedPresets(d); return d; })();
-  const w = wb ? await C.decryptDoc(key, wb, 'work') : S.emptyWork();
   for (const k of ['accounts', 'notes', 'providers', 'social_accounts']) p[k] ||= [];
-  w.nodes ||= [];
-  dek = key; pdoc = p; wdoc = w;
+  await S.del('work'); // 없앤 업무 트리 (M3.5 이전 금고에 남아 있던 암호문)
+  dek = key; pdoc = p;
   enterApp();
 }
 
@@ -412,7 +398,7 @@ function enterApp(msg) {
   pad = null;
   gate.hidden = true; gate.innerHTML = '';
   $('#app').hidden = false;
-  ui.sel = null; ui.draft = null; ui.revealed.clear(); ui.path = null; ui.open.clear(); clearSearch(false);
+  ui.sel = null; ui.draft = null; ui.revealed.clear(); clearSearch(false);
   lastAct = Date.now();
   clearInterval(idleTimer);
   idleTimer = setInterval(checkIdle, 10000);
@@ -429,8 +415,8 @@ async function lock(msg = '') {
   unlocked = false;
   clearInterval(idleTimer);
   closeDialog();
-  dek = null; pdoc = null; wdoc = null;
-  ui.sel = null; ui.draft = null; ui.revealed.clear(); ui.path = null; ui.open.clear(); clearSearch(false);
+  dek = null; pdoc = null;
+  ui.sel = null; ui.draft = null; ui.revealed.clear(); clearSearch(false);
   for (const id of ['#side', '#chips', '#bar', '#list', '#panel']) $(id).innerHTML = '';
   document.body.classList.remove('sheet-open');
   document.body.classList.add('no-sel');
@@ -473,22 +459,20 @@ function renderAll() { renderNav(); renderBar(); renderList(); renderPanel(); }
 const searching = () => !!ui.q.trim();
 
 function counts() {
-  return { accounts: L(pdoc.accounts).length, notes: L(pdoc.notes).length, social: L(pdoc.providers).length, work: L(wdoc.nodes).filter(n => n.type === 'field').length };
+  return { accounts: L(pdoc.accounts).length, notes: L(pdoc.notes).length, social: L(pdoc.providers).length };
 }
 function renderNav() {
   const c = counts();
   const nav = (v, icon, label, n, disabled = false) => `<button class="nav" data-act="view" data-v="${v}" aria-current="${ui.view === v}" title="${esc(label)}"${disabled ? ' disabled' : ''}>${ic(icon)}<span class="lbl">${esc(label)}</span>${n == null ? '' : `<span class="n">${n}</span>`}</button>`;
   $('#side').innerHTML = `<h3>개인</h3>${nav('accounts', 'user', '계정', c.accounts)}${nav('notes', 'note', '보안 메모', c.notes)}
-    <div class="sep"></div><h3>업무</h3>${nav('work', 'tree', '업무 트리', c.work)}
     <div class="sep"></div><h3>관리</h3>${nav('social', 'link', '소셜 관리', c.social)}
     <span class="sp"></span>
     <button class="nav" data-act="settings" title="설정">${ic('gear')}<span class="lbl">설정</span></button>`;
   const chip = (v, label, n, disabled = false) => `<button class="chip" role="tab" data-act="view" data-v="${v}" aria-selected="${ui.view === v}"${disabled ? ' disabled' : ''}>${esc(label)}${n == null ? '' : `<span class="n">${n}</span>`}</button>`;
-  $('#chips').innerHTML = chip('accounts', '계정', c.accounts) + chip('notes', '보안 메모', c.notes) + chip('work', '업무', c.work) + chip('social', '소셜', c.social);
+  $('#chips').innerHTML = chip('accounts', '계정', c.accounts) + chip('notes', '보안 메모', c.notes) + chip('social', '소셜', c.social);
 }
 function renderBar() {
   if (searching()) { $('#bar').innerHTML = `<h2>검색 결과</h2><span class="n" id="qCount"></span><button class="btn" data-act="search-clear">${ic('x')}검색 닫기</button>`; return; }
-  if (ui.view === 'work') { $('#bar').innerHTML = workBar(); const cr = $('#bar .crumbs'); if (cr) cr.scrollLeft = cr.scrollWidth; return; }
   const c = counts();
   const add = { accounts: '계정 추가', notes: '메모 추가', social: '소셜 추가' }[ui.view];
   $('#bar').innerHTML = `<h2>${esc(VIEWS[ui.view])}</h2><span class="n">${c[ui.view] ?? ''}</span>
@@ -498,7 +482,6 @@ function renderBar() {
 function renderList() {
   const el = $('#list');
   if (searching()) { el.innerHTML = searchResults(); return; }
-  if (ui.view === 'work') { el.innerHTML = workList(); return; }
   const cur = id => `aria-current="${ui.sel === id}"`;
   if (ui.view === 'accounts') {
     const groups = S.groupAccounts(pdoc, a => loginLabel(a));
@@ -550,13 +533,8 @@ function secretHtml(key, value, { mono = false, multi = false } = {}) {
 function renderPanel() {
   const el = $('#panel');
   const d = ui.draft;
-  if (d) { el.innerHTML = d.kind === 'account' ? accountForm(d) : d.kind === 'field' ? fieldForm(d) : noteForm(d); setPanelOpen(true); bindForm(); return; }
+  if (d) { el.innerHTML = d.kind === 'account' ? accountForm(d) : noteForm(d); setPanelOpen(true); bindForm(); return; }
   const id = ui.sel;
-  if (ui.view === 'work') {
-    const node = S.nodeById(wdoc, id);
-    if (node?.type === 'folder') { el.innerHTML = folderPanel(node); setPanelOpen(true); return; }
-    ui.sel = null; el.innerHTML = ''; setPanelOpen(false); return;
-  }
   const a = id && ui.view === 'accounts' ? L(pdoc.accounts).find(x => x.id === id) : null;
   const n = id && ui.view === 'notes' ? L(pdoc.notes).find(x => x.id === id) : null;
   const p = id && ui.view === 'social' ? L(pdoc.providers).find(x => x.id === id) : null;
@@ -654,10 +632,6 @@ function readForm() {
     document.querySelectorAll('#form .xv').forEach(el => { const x = d.extra[+el.dataset.xi]; if (x) x.value = el.value; });
     const pending = (v('#fAlias') || '').trim();
     if (pending) { addAliases(pending); $('#fAlias').value = ''; }
-  } else if (d.kind === 'field') {
-    d.name = v('#fKey') ?? d.name;
-    d.value = v('#fVal') ?? d.value;
-    if ($('#fMask')) d.masked = $('#fMask').checked;
   } else {
     d.title = v('#fTitle') ?? d.title;
     d.body = v('#fBody') ?? d.body;
@@ -746,21 +720,18 @@ function startDraft(kind, item) {
       service: base.service, aliases: [...base.aliases], login_type: base.login_type, provider_id: base.provider_id, social_account_id: base.social_account_id,
       login_id: base.login_id, password: base.password, url: base.url, memo: base.memo,
       extra: (base.extra || []).map(x => ({ key: x.key, value: x.value, shown: false })) };
-  } else if (kind === 'field') {
-    ui.draft = { kind, isNew: !item, id: item?.id || null, parent: item ? item.parent_id : ui.path, orig: item ? structuredClone(item) : null,
-      name: item?.name || '', value: item?.value || '', masked: item ? item.masked : true, showVal: !item || !item.masked };
   } else {
     ui.draft = { kind, isNew: !item, id: item?.id || null, orig: item ? structuredClone(item) : null, title: item?.title || '', body: item?.body || '' };
   }
   renderPanel();
-  $({ account: '#fService', field: '#fKey', note: '#fTitle' }[kind])?.focus();
+  $({ account: '#fService', note: '#fTitle' }[kind])?.focus();
 }
 function draftDirty() {
   const d = ui.draft;
   if (!d) return false;
   readForm();
-  const o = d.orig || (d.kind === 'account' ? { service: '', aliases: [], login_type: 'direct', provider_id: null, social_account_id: null, login_id: '', password: '', url: '', memo: '' } : d.kind === 'field' ? { name: '', value: '', masked: d.startMasked ?? true } : { title: '', body: '' });
-  const keys = d.kind === 'account' ? ['service', 'login_type', 'provider_id', 'social_account_id', 'login_id', 'password', 'url', 'memo'] : d.kind === 'field' ? ['name', 'value', 'masked'] : ['title', 'body'];
+  const o = d.orig || (d.kind === 'account' ? { service: '', aliases: [], login_type: 'direct', provider_id: null, social_account_id: null, login_id: '', password: '', url: '', memo: '' } : { title: '', body: '' });
+  const keys = d.kind === 'account' ? ['service', 'login_type', 'provider_id', 'social_account_id', 'login_id', 'password', 'url', 'memo'] : ['title', 'body'];
   return keys.some(k => (d[k] ?? '') !== (o[k] ?? '')) || (d.kind === 'account' && (JSON.stringify(d.aliases) !== JSON.stringify(o.aliases)
     || JSON.stringify(d.extra.filter(x => x.key.trim() || x.value).map(x => [x.key.trim(), x.value])) !== JSON.stringify((o.extra || []).map(x => [x.key, x.value]))));
 }
@@ -776,8 +747,7 @@ function formError(msg, focus) {
   if (e) { e.textContent = msg; e.hidden = false; }
   if (focus) { $(focus)?.classList.add('err'); $(focus)?.focus(); }
 }
-// more: 업무 새 항목에서 '계속 추가' (저장 후 같은 폴더에 빈 입력창, 값 가리기는 직전 설정 유지)
-function saveDraft(more = false) {
+function saveDraft() {
   readForm();
   const d = ui.draft;
   if (d.kind === 'account') {
@@ -791,27 +761,6 @@ function saveDraft(more = false) {
     else a = S.createAccount(pdoc, fields);
     S.normalizeAccount(a);
     ui.sel = a.id;
-  } else if (d.kind === 'field') {
-    let r;
-    const node = d.id ? S.nodeById(wdoc, d.id) : null;
-    if (node) r = S.updateNode(wdoc, node, { name: d.name, value: d.value, masked: d.masked });
-    else r = S.createNode(wdoc, d.parent, 'field', { name: d.name, value: d.value, masked: d.masked });
-    if (r.error) return formError(r.error, '#fKey');
-    ui.hl = r.node.id;
-    ui.path = r.node.parent_id;
-    ui.draft = null;
-    ui.revealed.clear();
-    save('work');
-    if (more && !node) {
-      ui.draft = { kind: 'field', isNew: true, id: null, parent: r.node.parent_id, orig: null, name: '', value: '', masked: d.masked, startMasked: d.masked, showVal: true };
-      renderAll();
-      $('#fKey')?.focus();
-      toast(`“${r.node.name}” 저장 · 다음 항목을 입력하세요`);
-      return;
-    }
-    renderAll();
-    toast('저장했습니다');
-    return;
   } else {
     if (!d.title.trim()) return formError('제목을 입력하세요', '#fTitle');
     const fields = { title: d.title.trim().slice(0, 120), body: d.body };
@@ -827,190 +776,8 @@ function saveDraft(more = false) {
   toast('저장했습니다');
 }
 
-
 // =====================================================================
-// 업무 트리 (M2)
-// =====================================================================
-const pathNames = id => S.pathOf(wdoc, id).map(n => n.name);
-function crumbsHtml() {
-  const path = S.pathOf(wdoc, ui.path);
-  const parts = [`<button class="crumb" data-act="go-folder" data-id="" ${path.length ? '' : 'aria-current="page"'}>${ic('home')}<span>업무</span></button>`];
-  path.forEach((n, i) => parts.push(`<span class="csep" aria-hidden="true">›</span><button class="crumb" data-act="go-folder" data-id="${n.id}" ${i === path.length - 1 ? 'aria-current="page"' : ''}>${esc(n.name)}</button>`));
-  return `<nav class="crumbs" aria-label="현재 위치">${parts.join('')}</nav>`;
-}
-const modeSeg = () => `<span class="mseg" role="group" aria-label="보기 방식"><button data-act="work-mode" data-v="folder" aria-pressed="${ui.workMode === 'folder'}" title="폴더 보기">${ic('folder')}<span>폴더</span></button><button data-act="work-mode" data-v="tree" aria-pressed="${ui.workMode === 'tree'}" title="트리 보기">${ic('branch')}<span>트리</span></button></span>`;
-function workBar() {
-  if (ui.path && !S.nodeById(wdoc, ui.path)) ui.path = null;
-  if (ui.workMode === 'tree') {
-    return `<h2>업무</h2>${modeSeg()}<span class="mrow">${modeSeg()}</span>
-      <span class="acts"><button class="icbtn" data-act="tree-all" data-v="1" aria-label="모두 펼치기" title="모두 펼치기">${ic('expand')}</button><button class="icbtn" data-act="tree-all" data-v="0" aria-label="모두 접기" title="모두 접기">${ic('collapse')}</button>
-      <button class="btn" data-act="add-folder">${ic('folderPlus')}폴더</button></span>`;
-  }
-  const cur = S.nodeById(wdoc, ui.path);
-  return `<h2>${esc(cur ? cur.name : '업무')}</h2>${modeSeg()}
-    <span class="acts">${cur ? `<button class="icbtn" data-act="folder-manage" aria-label="이 폴더 관리" title="이 폴더 관리 (이름 변경·이동·삭제)">${ic('edit')}</button>` : ''}
-    <button class="btn" data-act="add-folder">${ic('folderPlus')}폴더</button><button class="btn primary" data-act="add-field">${ic('plus')}항목</button></span>
-    <span class="mrow">${modeSeg()}</span>${crumbsHtml()}`;
-}
-// 트리 보기: 처음엔 접혀 있고, 펼친 폴더의 하위만 그린다. 가린 값은 눌러야 보인다
-function treeList() {
-  const top = S.childrenOf(wdoc, null);
-  if (!top.folders.length && !top.fields.length) return workEmpty();
-  const out = [];
-  const indent = d => '<span class="ind"></span>'.repeat(d);
-  const walk = (pid, d) => {
-    const { folders, fields } = S.childrenOf(wdoc, pid);
-    for (const f of folders) {
-      const open = ui.open.has(f.id);
-      const kids = S.childrenOf(wdoc, f.id), n = kids.folders.length + kids.fields.length;
-      out.push(`<div class="tr tf" role="treeitem" aria-expanded="${open}" aria-level="${d + 1}">${indent(d)}
-        <button class="tt" data-act="tree-toggle" data-id="${f.id}" ${n ? '' : 'disabled'}>${ic(open ? 'chevD' : 'chevR', 'car')}${ic('folder', 'tfi')}<span class="tn">${esc(f.name)}</span>${n ? `<span class="tc">${n}</span>` : '<span class="tc">비어 있음</span>'}</button>
-        <button class="icbtn xs" data-act="tree-go" data-id="${f.id}" aria-label="${esc(f.name)} 폴더 열기" title="폴더 보기로 열기">${ic('enter')}</button></div>`);
-      if (open) walk(f.id, d + 1);
-    }
-    for (const x of fields) {
-      const key = x.id + ':v', shown = !x.masked || ui.revealed.has(key);
-      const full = ui.revealed.has(x.id + ':full');
-      const lines = x.value.split('\n');
-      let val;
-      if (!x.value) val = '<span class="tv none">값 없음</span>';
-      else if (!shown) val = `<button class="tv tm" data-act="reveal" data-key="${key}" aria-label="${esc(x.name)} 눌러서 보기">••••••</button>`;
-      else if (lines.length > 1 && !full) val = `<button class="tv tmore" data-act="tree-full" data-id="${x.id}" title="전체 보기">${esc(lines[0])}<small> …(+${lines.length - 1}줄)</small></button>`;
-      else val = `<span class="tv ${lines.length > 1 ? 'multi' : ''}">${esc(x.value)}</span>`;
-      const hide = x.masked && shown && x.value ? `<button class="icbtn xs" data-act="reveal" data-key="${key}" aria-label="${esc(x.name)} 가리기">${ic('eyeOff')}</button>` : '';
-      out.push(`<div class="tr tfld" role="treeitem" aria-level="${d + 1}" aria-current="${ui.hl === x.id || ui.draft?.id === x.id}">${indent(d)}<span class="tsp"></span><span class="tk" title="${esc(x.name)}">${x.masked ? ic('lock', 'kl') : ''}${esc(x.name)}</span><span class="tsep">:</span>${val}${hide}
-        <button class="icbtn xs" data-act="edit-field" data-id="${x.id}" aria-label="${esc(x.name)} 편집">${ic('edit')}</button></div>`);
-    }
-  };
-  walk(null, 0);
-  return `<div class="tree" role="tree" aria-label="업무 트리">${out.join('')}</div>`;
-}
-// 트리에서 이 노드가 보이도록 상위 폴더를 모두 펼친다
-function openAncestors(id) { for (const n of S.pathOf(wdoc, id).slice(0, -1)) ui.open.add(n.id); }
-function workEmpty() {
-  return `<div class="empty">${ic('tree')}<span>업무 정보를 폴더로 정리해 보세요</span><span class="hint">예: 고객사 › 시스템 › 대상 순서로 폴더를 만들고, 그 안에 ID·PW 같은 항목을 넣습니다</span>
-    <span class="btns"><button class="btn" data-act="add-folder">${ic('folderPlus')}폴더</button></span></div>`;
-}
-function workList() {
-  if (ui.workMode === 'tree') return treeList();
-  const { folders, fields } = S.childrenOf(wdoc, ui.path);
-  if (!folders.length && !fields.length) {
-    return `<div class="empty">${ic('tree')}<span>${ui.path ? '비어 있는 폴더입니다' : '업무 정보를 폴더로 정리해 보세요'}</span>
-      ${ui.path ? '' : '<span class="hint">예: 고객사 › 시스템 › 대상 순서로 폴더를 만들고, 그 안에 ID·PW 같은 항목을 넣습니다</span>'}
-      <span class="btns"><button class="btn" data-act="add-folder">${ic('folderPlus')}폴더</button><button class="btn" data-act="add-field">${ic('plus')}항목</button></span></div>`;
-  }
-  const fold = folders.map(f => {
-    const kids = S.childrenOf(wdoc, f.id);
-    const parts = [];
-    if (kids.folders.length) parts.push(`폴더 ${kids.folders.length}`);
-    if (kids.fields.length) parts.push(`항목 ${kids.fields.length}`);
-    return `<button class="card fold" data-act="open-folder" data-id="${f.id}">${ic('folder', 'fic')}<span class="tx"><span class="t1">${esc(f.name)}</span><span class="t2">${parts.join(' · ') || '비어 있음'}</span></span>${ic('chevR', 'lk')}</button>`;
-  }).join('');
-  return fold + (fields.length ? `<div class="grp fields">${fields.map(fieldRow).join('')}</div>` : '');
-}
-function fieldRow(n) {
-  const key = n.id + ':v';
-  const shown = !n.masked || ui.revealed.has(key);
-  const multi = n.value.includes('\n') ? 'multi' : '';
-  let val, extra = '';
-  if (!n.value) val = `<span class="fv none">값 없음</span>`;
-  else if (shown) {
-    val = `<span class="fv fval ${multi}">${esc(n.value)}</span>`;
-    if (n.masked) extra = `<button class="icbtn sm" data-act="reveal" data-key="${key}" aria-pressed="true" aria-label="${esc(n.name)} 가리기">${ic('eyeOff')}</button>`;
-  } else val = `<button class="maskbtn" data-act="reveal" data-key="${key}" aria-pressed="false" aria-label="${esc(n.name)} 눌러서 보기"><span>••••••••</span><small>눌러서 보기</small>${ic('eye')}</button>`;
-  const cur = ui.hl === n.id || ui.draft?.id === n.id;
-  return `<div class="frow" data-id="${n.id}" aria-current="${cur}"><div class="fk">${n.masked ? ic('lock', 'kl') : ''}<span>${esc(n.name)}</span></div>
-    <div class="fvw">${val}</div><div class="fa">${extra}<button class="icbtn sm" data-act="edit-field" data-id="${n.id}" aria-label="${esc(n.name)} 편집">${ic('edit')}</button></div></div>`;
-}
-function folderPanel(f) {
-  const c = S.countUnder(wdoc, f.id);
-  const where = ['업무', ...pathNames(f.parent_id)].join(' › ');
-  return `${panelHead(`<span class="bdg svc lg">${ic('folder')}</span><h2>${esc(f.name)}</h2>`)}
-    <div class="pb">
-      <form id="folderForm" autocomplete="off"><label class="fl" for="fFolder">폴더 이름</label>
-        <div class="selrow"><input class="in" id="fFolder" maxlength="100" value="${esc(f.name)}" spellcheck="false"><button class="btn" type="submit">바꾸기</button></div>
-        <p class="note" id="folderErr" hidden></p></form>
-      <div><span class="fl">위치</span><div class="fv">${esc(where)}</div></div>
-      <div><span class="fl">안에 든 것 (하위 전체)</span><div class="fv">폴더 ${c.folders}개 · 항목 ${c.fields}개</div></div>
-      <div><button class="btn" data-act="move" data-id="${f.id}">${ic('move')}다른 폴더로 이동</button></div>
-      <div class="meta"><span>만든 날 ${esc(fmtDate(f.created_at))}</span><span>고친 날 ${esc(fmtDate(f.updated_at))}</span></div>
-    </div>
-    <div class="pf"><span class="lbl">${esc(f.id)}</span><span class="sp"></span><button class="btn danger" data-act="delete">${ic('trash')}삭제</button></div>`;
-}
-function fieldForm(d) {
-  const parent = d.id ? (S.nodeById(wdoc, d.id)?.parent_id ?? null) : d.parent;
-  const where = ['업무', ...pathNames(parent)].join(' › ');
-  const rows = Math.min(10, Math.max(2, (d.value.match(/\n/g) || []).length + 1));
-  return `${panelHead(`<h2>${d.isNew ? '항목 추가' : '항목 편집'}</h2>`)}
-    <form class="pb" id="form" autocomplete="off">
-      <div><span class="fl">위치</span><div class="fv">${esc(where)}</div></div>
-      <div><label class="fl" for="fKey">key *</label><input class="in" id="fKey" maxlength="100" value="${esc(d.name)}" autocapitalize="off" spellcheck="false" placeholder="예: ID, PW, IP, privateKey">
-        ${d.isNew ? `<div class="qk" aria-label="빠른 입력">${S.QUICK_KEYS.map(q => `<button type="button" class="chip" data-act="quick-key" data-k="${q.key}" data-m="${q.masked ? 1 : 0}" aria-pressed="${d.name === q.key}">${q.key}</button>`).join('')}</div>` : ''}</div>
-      <div><label class="fl" for="fVal">값</label><div class="inwrap"><textarea class="in mono ${d.showVal ? '' : 'hidev'}" id="fVal" rows="${rows}" maxlength="20000" spellcheck="false" autocapitalize="off" autocomplete="off">${esc(d.value)}</textarea>
-        <button type="button" class="icbtn" data-act="val-eye" aria-label="${d.showVal ? '값 가리기' : '값 보기'}">${ic(d.showVal ? 'eyeOff' : 'eye')}</button></div>
-        <p class="hint">여러 줄(개인키 등)도 그대로 넣을 수 있습니다.</p></div>
-      <label class="ck"><input type="checkbox" id="fMask" ${d.masked ? 'checked' : ''}> 값 가리기 (눌러야 보이고, 검색에서 빠짐)</label>
-      <p class="note" id="formErr" hidden></p>
-    </form>
-    <div class="pf">${d.isNew ? '' : `<button class="icbtn" data-act="move" data-id="${d.id}" aria-label="다른 폴더로 이동" title="다른 폴더로 이동">${ic('move')}</button><button class="icbtn" data-act="delete" aria-label="삭제" title="삭제" style="color:var(--danger)">${ic('trash')}</button>`}
-      <span class="sp"></span><button class="btn" data-act="cancel">취소</button>${d.isNew ? '<button class="btn" data-act="save-more" title="저장하고 같은 폴더에 새 항목 입력">계속 추가</button>' : ''}<button class="btn primary" data-act="save">저장</button></div>`;
-}
-// 새 폴더: 'a/b/c'처럼 쓰면 없는 단계만 만든다. 여러 단계를 쓰면 마지막 폴더로 들어간다
-function newFolder() {
-  const baseId = ui.workMode === 'tree' ? null : ui.path; // 트리 보기에서는 최상위 기준
-  const base = S.nodeById(wdoc, baseId);
-  const hint = v => {
-    const p = S.planPath(wdoc, baseId, v);
-    if (!p.segments.length) return '/로 이어 쓰면 여러 단계를 한 번에 만듭니다. 이미 있는 폴더는 그대로 씁니다';
-    if (p.error) return p.error;
-    if (!p.toCreate.length) return '이미 있는 폴더입니다. 그 폴더로 이동합니다';
-    return `새로 만들 폴더 ${p.toCreate.length}개: ${p.toCreate.join(' › ')}${p.existing.length ? ` (기존 ${p.existing.map(n => n.name).join(' › ')} 아래)` : ''}`;
-  };
-  return promptDialog(base ? `'${base.name}' 안에 새 폴더` : '새 폴더', '폴더 이름', '', {
-    okLabel: '만들기', maxlength: 600, placeholder: '예: 삼성증권/HIWARE/ServerEDR', hint,
-    validate: v => S.planPath(wdoc, baseId, v).error,
-  }).then(text => {
-    if (!text) return;
-    const multi = S.splitPath(text).length > 1;
-    const r = S.createPath(wdoc, baseId, text);
-    if (r.error) { toast(r.error); return; }
-    if (ui.workMode === 'tree') { openAncestors(r.node.id); ui.open.add(r.node.id); }
-    else if (multi || !r.created.length) { ui.path = r.node.id; ui.hl = null; ui.revealed.clear(); }
-    if (r.created.length) save('work');
-    renderAll();
-    toast(r.created.length ? `폴더 ${r.created.length}개를 만들었습니다` : '이미 있는 폴더로 이동했습니다');
-  });
-}
-function moveDialog(node) {
-  const rows = [];
-  const walk = (pid, depth) => { for (const f of S.childrenOf(wdoc, pid).folders) { rows.push({ f, depth }); walk(f.id, depth + 1); } };
-  walk(null, 1);
-  const here = node.parent_id || '';
-  const opt = (id, name, depth) => {
-    const err = S.moveError(wdoc, node, id || null);
-    return `<button class="mi tree" data-move="${id}" style="padding-left:${8 + depth * 18}px" ${err ? `disabled title="${esc(err)}"` : ''}>${ic(id ? 'folder' : 'home')}<span class="t">${esc(name)}</span>${id === here ? '<span class="sub">현재 위치</span>' : ''}</button>`;
-  };
-  const d = openDialog(`'${node.name}' 이동`, `<p>옮길 폴더를 고르세요. ${node.type === 'folder' ? '하위 폴더·항목도 함께 옮겨집니다.' : ''}</p>
-    <div class="menu treebox">${opt('', '업무 (최상위)', 0)}${rows.map(r => opt(r.f.id, r.f.name, r.depth)).join('')}</div>`);
-  const on = e => {
-    const b = e.target.closest('[data-move]');
-    if (!b || b.disabled) return;
-    const target = b.dataset.move || null;
-    const r = S.moveNode(wdoc, node, target);
-    if (r.error) { toast(r.error); return; }
-    d.removeEventListener('click', on);
-    closeDialog();
-    if (node.type === 'field') { ui.path = target; ui.hl = node.id; if (ui.draft?.id === node.id) ui.draft.parent = target; }
-    save('work'); readForm(); renderAll();
-    toast(`${['업무', ...pathNames(target)].join(' › ')}(으)로 옮겼습니다`);
-  };
-  d.addEventListener('click', on);
-  const offClose = () => { if (!d.open) { d.removeEventListener('click', on); d.removeEventListener('close', offClose); } };
-  d.addEventListener('close', offClose);
-}
-
-// =====================================================================
-// 통합 검색 (M2)
+// 검색
 // =====================================================================
 const qIn = $('#q');
 function clearSearch(render = true) {
@@ -1035,20 +802,14 @@ function openSearch() {
   qIn.focus();
 }
 function searchResults() {
-  const r = Q.search(ui.q, { pdoc, wdoc, providerName: id => providerById(id)?.name || '', socialLabel: id => socialById(id)?.label || '' });
+  const r = Q.search(ui.q, { pdoc, providerName: id => providerById(id)?.name || '', socialLabel: id => socialById(id)?.label || '' });
   const cnt = $('#qCount'); if (cnt) cnt.textContent = `${r.total}건`;
-  if (!r.total) return `<div class="empty">${ic('search')}<span>‘${esc(ui.q.trim())}’에 맞는 항목이 없습니다</span><span class="hint">비밀번호·메모·보안 메모 내용·가린 값은 검색하지 않습니다</span></div>`;
+  if (!r.total) return `<div class="empty">${ic('search')}<span>‘${esc(ui.q.trim())}’에 맞는 항목이 없습니다</span><span class="hint">비밀번호·메모·보안 메모 내용은 검색하지 않습니다</span></div>`;
   const sec = (title, list, row) => (list.length ? `<div class="grp"><div class="gh">${esc(title)}<span class="n">${list.length}</span></div>${list.map(row).join('')}</div>` : '');
   return sec('개인 · 계정', r.accounts, ({ item: a }) => `<button class="row" data-act="res" data-kind="account" data-id="${a.id}">${svcBadge(a.service)}
       <span class="tx"><span class="t1">${esc(a.service)}</span><span class="t2">${esc(loginLabel(a))}${a.aliases.length ? ' · ' + esc(a.aliases.join(', ')) : ''}</span></span>${ic('chevR', 'chev')}</button>`)
     + sec('개인 · 보안 메모', r.notes, ({ item: n }) => `<button class="row" data-act="res" data-kind="note" data-id="${n.id}"><span class="bdg svc">${ic('lock')}</span>
-      <span class="tx"><span class="t1">${esc(n.title || '(제목 없음)')}</span></span>${ic('chevR', 'chev')}</button>`)
-    + sec('업무', r.work, ({ item: n, path }) => {
-      const where = ['업무', ...path.slice(0, -1).map(p => p.name)].join(' › ');
-      const val = n.type === 'field' ? (n.masked ? ' = ••••' : n.value ? ' = ' + n.value.split('\n')[0] : '') : '';
-      return `<button class="row" data-act="res" data-kind="work" data-id="${n.id}"><span class="bdg svc">${ic(n.type === 'folder' ? 'folder' : 'field')}</span>
-        <span class="tx"><span class="t1">${esc(n.name)}<span class="vv">${esc(val)}</span></span><span class="t2">${esc(where)}</span></span>${ic('chevR', 'chev')}</button>`;
-    });
+      <span class="tx"><span class="t1">${esc(n.title || '(제목 없음)')}</span></span>${ic('chevR', 'chev')}</button>`);
 }
 
 // ---------- 소셜 관리 패널 (바로 저장) ----------
@@ -1091,15 +852,6 @@ function bindProviderPanel() {
     }
   });
   panel.addEventListener('submit', e => {
-    if (e.target.id === 'folderForm') {
-      e.preventDefault();
-      const node = S.nodeById(wdoc, ui.sel);
-      if (!node) return;
-      const r = S.updateNode(wdoc, node, { name: $('#fFolder').value });
-      if (r.error) { const er = $('#folderErr'); er.textContent = r.error; er.hidden = false; $('#fFolder').classList.add('err'); return; }
-      save('work'); renderAll(); toast('폴더 이름을 바꿨습니다');
-      return;
-    }
     if (e.target.id !== 'saAdd') return;
     e.preventDefault();
     const v = $('#saNew').value.trim();
@@ -1212,7 +964,7 @@ function dlgRecovery() {
   $('#rcPin').focus();
 }
 function dlgWipe() {
-  openDialog('이 기기의 데이터 삭제', `<p>이 기기에 저장된 Info Manager의 계정·메모·소셜·업무 정보와 PIN 설정을 <b>모두 지웁니다.</b> 되돌릴 수 없습니다.</p>
+  openDialog('이 기기의 데이터 삭제', `<p>이 기기에 저장된 Info Manager의 계정·메모·소셜 정보와 PIN 설정을 <b>모두 지웁니다.</b> 되돌릴 수 없습니다.</p>
     <p>계속하려면 아래에 <b>삭제</b>라고 입력하세요.</p><input class="in" id="wipeIn" autocomplete="off">`,
     `<button class="btn" data-dlg="close">취소</button><button class="btn danger" id="wipeGo" disabled>모두 삭제</button>`);
   $('#wipeIn').addEventListener('input', e => { $('#wipeGo').disabled = e.target.value.trim() !== '삭제'; });
@@ -1240,7 +992,7 @@ document.addEventListener('click', async e => {
     case 'view': {
       if ((ui.view === b.dataset.v && !searching()) || !(await leaveDraft())) return;
       if (searching()) clearSearch(false);
-      ui.view = b.dataset.v; ui.sel = null; ui.hl = null; ui.revealed.clear();
+      ui.view = b.dataset.v; ui.sel = null; ui.revealed.clear();
       renderAll(); $('#list').scrollTop = 0;
       return;
     }
@@ -1271,16 +1023,10 @@ document.addEventListener('click', async e => {
     }
     case 'cancel': if (await leaveDraft()) { renderList(); renderPanel(); } return;
     case 'save': saveDraft(); return;
-    case 'save-more': saveDraft(true); return;
     case 'close': if (await leaveDraft()) closePanel(); return;
     case 'reveal': {
       const k = b.dataset.key;
       ui.revealed.has(k) ? ui.revealed.delete(k) : ui.revealed.add(k);
-      if (ui.view === 'work' && !searching()) {
-        const ls = $('#list').scrollTop; readForm(); renderList(); $('#list').scrollTop = ls;
-        ($(`[data-act="reveal"][data-key="${CSS.escape(k)}"]`) || $(`.frow[data-id="${CSS.escape(k.split(':')[0])}"] .fa [data-act="edit-field"]`))?.focus();
-        return;
-      }
       const scroll = $('#panel .pb')?.scrollTop || 0;
       renderPanel();
       const pb = $('#panel .pb'); if (pb) pb.scrollTop = scroll;
@@ -1292,63 +1038,14 @@ document.addEventListener('click', async e => {
     case 'x-eye': { readForm(); const x = ui.draft.extra[+b.dataset.xi]; if (x) x.shown = !x.shown; rerenderForm(`#form .xv[data-xi="${b.dataset.xi}"]`); return; }
     case 'pw-eye': readForm(); ui.draft.showPw = !ui.draft.showPw; rerenderForm('#fPw'); return;
     case 'delete': return deleteSelected();
-    case 'work-mode': {
-      if (ui.workMode === b.dataset.v || !(await leaveDraft())) return;
-      ui.workMode = b.dataset.v; ui.sel = null; ui.revealed.clear();
-      try { localStorage.setItem('im-workview', ui.workMode); } catch { /* 무시 */ }
-      if (ui.workMode === 'tree') { if (ui.path) { ui.open.add(ui.path); openAncestors(ui.path); } }
-      renderAll(); $('#list').scrollTop = 0;
-      return;
-    }
-    case 'tree-toggle': { const id = b.dataset.id; ui.open.has(id) ? ui.open.delete(id) : ui.open.add(id); const ls = $('#list').scrollTop; readForm(); renderList(); $('#list').scrollTop = ls; $(`[data-act="tree-toggle"][data-id="${id}"]`)?.focus(); return; }
-    case 'tree-all': {
-      if (b.dataset.v === '1') for (const n of S.live(wdoc.nodes)) { if (n.type === 'folder') ui.open.add(n.id); }
-      else ui.open.clear();
-      readForm(); renderList();
-      return;
-    }
-    case 'tree-full': { const k = b.dataset.id + ':full'; ui.revealed.add(k); const ls = $('#list').scrollTop; renderList(); $('#list').scrollTop = ls; return; }
-    case 'tree-go': {
-      if (!(await leaveDraft())) return;
-      ui.workMode = 'folder'; ui.path = b.dataset.id; ui.hl = null; ui.sel = null; ui.revealed.clear();
-      try { localStorage.setItem('im-workview', 'folder'); } catch { /* 무시 */ }
-      renderAll(); $('#list').scrollTop = 0;
-      return;
-    }
-    case 'open-folder':
-    case 'go-folder': {
-      if (!(await leaveDraft())) return;
-      ui.path = b.dataset.id || null; ui.hl = null; ui.sel = null; ui.revealed.clear();
-      renderAll(); $('#list').scrollTop = 0;
-      return;
-    }
-    case 'add-folder': if (await leaveDraft()) { renderPanel(); newFolder(); } return;
-    case 'add-field': if (await leaveDraft()) { ui.sel = null; startDraft('field', null); renderList(); } return;
-    case 'edit-field': {
-      const node = S.nodeById(wdoc, b.dataset.id);
-      if (!node || ui.draft?.id === node.id || !(await leaveDraft())) return;
-      ui.sel = null; ui.hl = node.id; startDraft('field', node); renderList();
-      return;
-    }
-    case 'folder-manage': if (await leaveDraft()) { ui.sel = ui.path; renderPanel(); } return;
-    case 'move': { const node = S.nodeById(wdoc, b.dataset.id); if (node) moveDialog(node); return; }
-    case 'quick-key': readForm(); Object.assign(ui.draft, { name: b.dataset.k, masked: b.dataset.m === '1', showVal: b.dataset.m !== '1' }); rerenderForm('#fVal'); return;
-    case 'val-eye': readForm(); ui.draft.showVal = !ui.draft.showVal; rerenderForm('#fVal'); return;
     case 'search-toggle': ui.searchOpen ? clearSearch() : openSearch(); return;
     case 'search-clear': clearSearch(); return;
     case 'res': {
       if (!(await leaveDraft())) return;
       const k = b.dataset.kind, id = b.dataset.id;
       clearSearch(false);
-      ui.revealed.clear(); ui.hl = null; ui.sel = null;
-      if (k === 'account' || k === 'note') { ui.view = k === 'account' ? 'accounts' : 'notes'; ui.sel = id; }
-      else {
-        const n = S.nodeById(wdoc, id);
-        if (!n) return;
-        ui.view = 'work';
-        if (n.type === 'folder') ui.path = n.id; else { ui.path = n.parent_id; ui.hl = n.id; }
-        if (ui.workMode === 'tree') { openAncestors(n.id); if (n.type === 'folder') { ui.open.add(n.id); ui.hl = null; } }
-      }
+      ui.revealed.clear();
+      ui.view = k === 'account' ? 'accounts' : 'notes'; ui.sel = id;
       renderAll();
       const t = $(`#list [aria-current="true"]`);
       t ? t.scrollIntoView({ block: 'center' }) : ($('#list').scrollTop = 0);
@@ -1391,19 +1088,6 @@ function closePanel() {
 }
 async function deleteSelected() {
   const id = ui.sel;
-  if (ui.view === 'work') {
-    const node = ui.draft?.kind === 'field' ? S.nodeById(wdoc, ui.draft.id) : S.nodeById(wdoc, id);
-    if (!node) return;
-    let msg = `<b>${esc(node.name)}</b> 항목을 지울까요?`;
-    if (node.type === 'folder') { const c = S.countUnder(wdoc, node.id); msg = `<b>${esc(node.name)}</b> 폴더${c.folders || c.fields ? `와 그 안의 폴더 ${c.folders}개·항목 ${c.fields}개` : ''}를 지울까요?`; }
-    if (!(await confirmDialog(node.type === 'folder' ? '폴더 삭제' : '항목 삭제', msg, '삭제', true))) return;
-    const inside = ui.path && (ui.path === node.id || S.pathOf(wdoc, ui.path).some(n => n.id === node.id));
-    S.deleteNode(wdoc, node);
-    if (inside) ui.path = node.parent_id;
-    ui.draft = null; ui.sel = null; ui.hl = null; ui.revealed.clear();
-    save('work'); renderAll(); toast('삭제했습니다');
-    return;
-  }
   if (ui.view === 'accounts') {
     const a = L(pdoc.accounts).find(x => x.id === id);
     if (!a || !(await confirmDialog('계정 삭제', `<b>${esc(a.service)}</b> · ${esc(loginLabel(a))} 계정을 지울까요?`, '삭제', true))) return;
@@ -1459,18 +1143,18 @@ dlg().addEventListener('click', async e => {
   if (!b) return;
   closeDialog();
   if (b.dataset.c === 'use-remote') {
-    if (!(await confirmDialog('Drive 금고로 바꾸기', '이 기기의 계정·메모·업무 데이터가 지워지고 Drive 금고로 바뀝니다. 되돌릴 수 없습니다.', '바꾸기', true))) return;
+    if (!(await confirmDialog('Drive 금고로 바꾸기', '이 기기의 계정·메모 데이터가 지워지고 Drive 금고로 바뀝니다. 되돌릴 수 없습니다.', '바꾸기', true))) return;
     let v;
     try { v = await Sync.fetchVault(); } catch (err) { toast('Drive 금고를 받지 못했습니다'); return; }
     if (!v) { toast('Drive 금고가 없어졌습니다. 다시 동기화합니다'); Sync.clearConflict(); Sync.syncNow(); return; }
     unlocked = false; clearTimeout(saveTimer); dirty.clear();
     await saving;
-    clearInterval(idleTimer); dek = null; pdoc = null; wdoc = null;
-    ui.sel = null; ui.draft = null; ui.revealed.clear(); ui.path = null; clearSearch(false);
+    clearInterval(idleTimer); dek = null; pdoc = null;
+    ui.sel = null; ui.draft = null; ui.revealed.clear(); clearSearch(false);
     for (const id of ['#side', '#chips', '#bar', '#list', '#panel']) $(id).innerHTML = '';
     document.body.classList.remove('sheet-open'); document.body.classList.add('no-sel');
     await storeVault(v);
-    for (const k of ['im-fid-meta', 'im-fid-personal', 'im-fid-work']) { try { localStorage.removeItem(k); } catch { /* 무시 */ } }
+    for (const k of ['im-fid-meta', 'im-fid-personal']) { try { localStorage.removeItem(k); } catch { /* 무시 */ } }
     Sync.clearConflict();
     bc?.postMessage({ type: 'unlocked', tab: TAB_ID });
     lockScreen('Drive 금고로 바꿨습니다. 그 금고의 PIN을 입력하세요');
@@ -1478,7 +1162,7 @@ dlg().addEventListener('click', async e => {
     if (!(await confirmDialog('Drive 덮어쓰기', 'Drive의 금고를 이 기기의 금고로 바꿉니다. Drive 금고를 쓰던 다른 기기는 나중에 Drive 금고로 다시 등록해야 합니다.', '덮어쓰기', true))) return;
     await flush(true); await saving;
     try {
-      await Sync.overwriteRemote({ meta, personal: await S.get('personal'), work: await S.get('work') });
+      await Sync.overwriteRemote({ meta, personal: await S.get('personal') });
       toast('Drive를 이 기기 금고로 덮어썼습니다');
       Sync.syncNow();
     } catch (err) { toast('덮어쓰지 못했습니다: ' + err.message); }
@@ -1486,12 +1170,13 @@ dlg().addEventListener('click', async e => {
 });
 
 Sync.init({
-  get: () => ({ unlocked, meta, dek, personal: pdoc, work: wdoc }),
+  get: () => ({ unlocked, meta, dek, personal: pdoc }),
   applyMeta: async m => { meta = m; await S.put('meta', m); bc?.postMessage({ type: 'meta', tab: TAB_ID }); },
   applyDoc: async (kind, doc) => {
     if (!unlocked) return;
-    if (kind === 'personal') { for (const k of ['accounts', 'notes', 'providers', 'social_accounts']) doc[k] ||= []; pdoc = doc; }
-    else { doc.nodes ||= []; wdoc = doc; }
+    if (kind !== 'personal') return;
+    for (const k of ['accounts', 'notes', 'providers', 'social_accounts']) doc[k] ||= [];
+    pdoc = doc;
     dirty.add(kind);
     await flush(true);
     if (ui.draft) { readForm(); renderNav(); renderBar(); renderList(); }
