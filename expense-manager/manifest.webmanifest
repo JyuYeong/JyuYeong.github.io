@@ -9,6 +9,12 @@
   "orientation": "any",
   "background_color": "#ffffff",
   "theme_color": "#ffffff",
+  "user_preferences": {
+    "color_scheme_dark": {
+      "theme_color": "#171A21",
+      "background_color": "#0F1115"
+    }
+  },
   "lang": "ko",
   "icons": [
     {
