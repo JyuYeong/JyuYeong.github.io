@@ -9,6 +9,7 @@
   --dep-bg:#EFE7FB;--dep:#5B2E9E;
   --st-todo:#7A8294;--st-prog:#2D5BE3;--st-done:#1E7A46;--st-cancel:#6B7385;--st-late:#D93025;--st-on:#fff;
   --tk-normal-bg:#E6EDFD;--tk-normal:#1F44B0;--tk-caution-bg:#FFF1D6;--tk-caution:#7A4A00;--tk-must-bg:#B3261E;--tk-must:#fff;--tk-caution-glow:#FFC24D;--tk-must-glow:#FF5C4F;
+  --ms-cur:#E8710A;--ms-cur-weak:#FDEBD8;--ms-done:#1E7A46;--ms-todo:#C4CAD4;
 }
 @media (prefers-color-scheme:dark){
   :root{
@@ -21,6 +22,7 @@
     --dep-bg:#2C2142;--dep:#CDB4FF;
     --st-todo:#8F97A8;--st-prog:#6E95FF;--st-done:#4CC38A;--st-cancel:#7D8595;--st-late:#FF6B5E;--st-on:#10131A;
     --tk-normal-bg:#1E2A4A;--tk-normal:#A9C0FF;--tk-caution-bg:#3A2C10;--tk-caution:#FFC766;--tk-must-bg:#C2392F;--tk-must:#fff;--tk-caution-glow:#8C6210;--tk-must-glow:#FF6B5E;
+    --ms-cur:#FF9A3D;--ms-cur-weak:#3A2612;--ms-done:#4CC38A;--ms-todo:#4A5263;
   }
 }
 *{box-sizing:border-box}
@@ -853,3 +855,50 @@ body.dm-sheet .panel{height:94dvh}
 .sug>.ic{width:16px;height:16px;color:var(--accent-ink);flex:none}
 .sug>.dot{margin:0 4px}
 .fmore{display:flex;align-items:center;gap:8px}
+
+/* V5.6 마일스톤 */
+.msline{display:flex;align-items:center;gap:8px;min-width:0;margin-top:4px;font-size:12.5px;color:var(--ink2)}
+.msdots{display:inline-flex;align-items:center;gap:3px;flex:none}
+.msdots i{width:8px;height:8px;border-radius:50%;background:var(--ms-todo)}
+.msdots i.d{background:var(--ms-done)}
+.msdots i.c{background:var(--ms-cur);box-shadow:0 0 0 2px var(--ms-cur-weak)}
+.msfrac{font-size:11.5px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums}
+.msline .msn{font-weight:600;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.msline .msn.nx{color:var(--ms-cur);font-weight:600}
+.msline .msd{color:var(--muted);flex:none;font-size:11.5px}
+.msline.fin .msdots i.c{background:var(--ms-todo);box-shadow:none}
+.msline.fin .msn{color:var(--muted);font-weight:500}
+
+.mslist{list-style:none;margin:4px 0 0;padding:0;display:flex;flex-direction:column}
+.ms{position:relative}
+.ms .msb{display:flex;align-items:center;gap:10px;width:100%;min-height:36px;padding:4px 6px;border:0;border-radius:8px;background:none;text-align:left}
+.ms .msb:hover{background:var(--hover)}
+.ms .msb i{position:relative;z-index:1;width:20px;height:20px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;border:2px solid var(--ms-todo);background:var(--surface)}
+.ms .msb i .ic{width:12px;height:12px;stroke-width:3;color:var(--st-on)}
+.ms.done .msb i{background:var(--ms-done);border-color:var(--ms-done)}
+.ms.cur .msb i{border-color:var(--ms-cur);background:var(--ms-cur-weak)}
+.ms.cur .msb i::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--ms-cur);animation:ms-blink 1.6s ease-in-out infinite}
+@keyframes ms-blink{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.25;transform:scale(.7)}}
+@media (prefers-reduced-motion:reduce){.ms.cur .msb i::after{animation:none}}
+.mslist:not(.editing) .ms:not(:last-child)::before{content:"";position:absolute;left:21px;top:28px;bottom:-8px;width:2px;background:var(--ms-todo)}
+.mslist:not(.editing) .ms.done:not(:last-child)::before{background:var(--ms-done)}
+.ms .msn{flex:1;min-width:0;font-size:14px;overflow-wrap:anywhere}
+.ms.done .msn{color:var(--muted)}
+.ms.cur .msn{font-weight:700}
+.ms .msm{flex:none;font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.ms.cur .msm{color:var(--ms-cur);font-weight:600}
+.ms .msb.armed .msn{color:var(--danger)}
+.ms.ed{display:flex;align-items:center;gap:4px;padding:3px 0;border-radius:8px}
+.ms.ed .in{flex:1;min-width:0}
+.ms.ed.done .in{color:var(--muted)}
+.msgrip{display:flex;align-items:center;justify-content:center;width:20px;height:28px;color:var(--muted);cursor:grab;flex:none}
+.msgrip .ic{width:14px;height:14px;transform:rotate(90deg)}
+.ms.ed.drag{opacity:.4}
+.ms.ed.over{box-shadow:inset 0 2px 0 var(--accent)}
+.msadd{display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap}
+.msadd .in{flex:1;min-width:160px}
+.msnext{color:var(--ms-cur)!important}
+.msdn{display:flex;align-items:center;gap:8px;margin:0 0 4px;font-size:15px}
+.msdn .ic{color:var(--ms-done)}
+.msimp{display:flex;flex-direction:column;gap:4px;max-height:50vh;overflow:auto;margin-top:8px}
+.msimp .sug{min-height:44px}

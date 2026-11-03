@@ -5,6 +5,7 @@ import { $, esc, ic, stIcon, wide } from './util.js';
 import { timelineHtml } from './logs.js';
 import { plainMd } from './md.js';
 import { renderPage, labelHeadHtml } from './views.js';
+import { msCardHtml, msPanelHtml } from './ms.js';
 
 const doc = () => st.doc;
 const labels = () => S.liveLabels(doc());
@@ -40,7 +41,7 @@ function matches(t, now) {
     if (!q.topics.some(id => (id === 'none' ? !tps.length : tps.includes(id)))) return false;
   }
   if (q.text) {
-    const hay = [t.title, t.memo, t.id, ...S.taskTopics(doc(), t).map(g => g.name), ...S.taskLabels(doc(), t).map(l => l.name), ...S.logsOfTask(st.logs, t.id).map(l => plainMd(l.body))].join(' ').toLowerCase();
+    const hay = [t.title, t.memo, t.id, ...S.taskTopics(doc(), t).map(g => g.name), ...S.taskLabels(doc(), t).map(l => l.name), ...S.logsOfTask(st.logs, t.id).map(l => plainMd(l.body)), ...(t.milestones || []).map(m => m.name)].join(' ').toLowerCase();
     if (!hay.includes(q.text.toLowerCase())) return false;
   }
   if (q.due !== 'any') {
@@ -221,6 +222,7 @@ function cardHtml(t, now) {
     <div class="body">
       <div class="row1"><div class="title">${esc(t.title)}</div><button class="idbtn" data-act="copy-id" data-id="${t.id}" aria-label="Task ID ${t.id} 복사">${t.id}</button></div>
       <div class="meta">${labelTags(t)}${topicTags(t)}<span class="badge u-${t.urgency}">${URG_LABEL[t.urgency]}</span>${depBadges(t)}</div>
+      ${msCardHtml(t, now)}
       ${datesHtml(t, now)}
       ${dayStripHtml(t, now)}
       ${t.memo ? `<div class="memo" title="${esc(t.memo)}"><span class="mt">${esc(t.memo)}</span></div>` : ''}
@@ -351,6 +353,8 @@ function panelHtml(t) {
         <div class="pc w"><label class="pl" for="f-memo">메모</label><textarea class="in xs memoin" id="f-memo" data-f="memo" maxlength="200" rows="1" enterkeyhint="done">${esc(t.memo)}</textarea></div>
       </div>` : `<p class="psum">${[S.taskLabels(doc(), t).map(l => l.name).join(', ') || '미분류', t.start_date ? '시작 ' + md(t.start_date) : '', t.due_date ? '마감 ' + md(t.due_date) + (t.due_time ? ' ' + t.due_time : '') : ''].filter(Boolean).map(esc).join(' · ')}</p>`}
     </section>
+
+    <section class="psec" id="msSec">${msPanelHtml(t)}</section>
 
     <section class="psec">
       <div class="shrow"><button type="button" class="sh" data-act="toggle-cal" aria-expanded="${st.ui.calOpen && !!t.day_check}"${t.day_check ? '' : ' disabled'}>${ic('chev')}날짜별 체크</button>

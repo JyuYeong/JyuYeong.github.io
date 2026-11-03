@@ -159,6 +159,7 @@ export function createTask(doc, fields = {}) {
     start_date: todayKST(), due_date: null, due_time: null,
     blocked_by: null,
     day_check: false, marked_days: [],
+    milestones: [], // V5.6: [{ id, name, done: 'YYYY-MM-DD'|null, added, log_id }]
     created_at: ts, updated_at: ts, completed_at: null, deleted_at: null,
     ...fields,
   };
@@ -384,7 +385,7 @@ export function normalize(doc) {
   const d = { ...emptyDoc(), ...doc };
   for (const k of ['labels', 'topics', 'tasks', 'views', 'ticker', 'settings']) if (!Array.isArray(d[k])) d[k] = [];
   for (const t of d.tasks) {
-    for (const k of ['label_ids', 'topic_ids', 'marked_days']) if (!Array.isArray(t[k])) t[k] = [];
+    for (const k of ['label_ids', 'topic_ids', 'marked_days', 'milestones']) if (!Array.isArray(t[k])) t[k] = [];
   }
   const cut = new Date(Date.now() - PURGE_DAYS * 86400000).toISOString();
   for (const k of ['labels', 'topics', 'tasks', 'views', 'ticker', 'settings']) d[k] = d[k].filter(x => !x.deleted_at || x.deleted_at > cut);
