@@ -8,6 +8,7 @@ import { $, esc, ic, stIcon, wide, toast, dlg, openDlg, dlgIs, setDlgBody, openM
 import { renderList, renderSide, renderPanel, renderTicker, renderAll, touch, refreshPanelValues, growArea, fitMemos, visibleTasks, tsFootHtml } from './render.js';
 import { openComposer, composer, linkTotal, setKind, tl, refreshLinked, refreshSuggest, refreshDateNote, refreshCount, mdFormat, togglePreview, scrollToLog } from './logs.js';
 import { dashOpen, feedMore } from './views.js';
+import './today.js';
 import { labelsHtml, refreshLabelsDlg, openLabels, openTopicsOf, newLabelDialog, newTopicDialog, filterHtml, settingsHtml, tickerHtml, TK_STATE } from './dialogs.js';
 
 const doc = () => st.doc;
@@ -161,6 +162,7 @@ document.addEventListener('click', async e => {
     case 'filter': st.ui.filter = el.dataset.v; st.ui.page = { kind: 'list', id: null }; setRail(false); renderList(); renderSide(); $('#list').scrollTop = 0; break;
 
     // 페이지: 대시보드 · 라벨 보기 · 주제 보기
+    case 'page-today': goPage({ kind: 'today', id: null }); break;
     case 'page-dash': goPage({ kind: 'dash', id: null }); break;
     case 'label-view': e.stopPropagation(); goPage({ kind: 'label', id }); break;
     case 'topic-view': e.stopPropagation(); goPage({ kind: 'topic', id }); break;

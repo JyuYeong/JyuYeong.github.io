@@ -1,11 +1,12 @@
 // V4: 대시보드 · 라벨 보기 · 주제 보기 (목록 자리에 그리는 페이지)
-// st.ui.page = { kind: 'list' | 'dash' | 'label' | 'topic', id }
+// st.ui.page = { kind: 'today' | 'list' | 'dash' | 'label' | 'topic' | 'vault', id }
 import * as S from './store.js';
 import { st, liveTasks, taskById, STATUS_LABEL } from './state.js';
 import { $, esc, ic, stIcon } from './util.js';
 import { renderMd } from './md.js';
 import { dayLabel, scopeBtns } from './logs.js';
 import { vaultPageHtml, vaultLabelSection } from './vaultui.js';
+import { renderToday } from './today.js';
 
 const doc = () => st.doc;
 const BUCKETS = [['all', '전체'], ['todo', '대기'], ['in_progress', '진행 중'], ['delayed', '지연 중'], ['done', '완료'], ['canceled', '취소']];
@@ -153,6 +154,7 @@ export function renderPage() {
   $('#page').hidden = isList;
   document.querySelector('.app').dataset.page = p.kind;
   if (isList) return;
+  if (p.kind === 'today') { renderToday($('#page')); return; }
   const html = p.kind === 'dash' ? dashHtml() : p.kind === 'label' ? labelHtml(p.id) : p.kind === 'vault' ? vaultPageHtml() : topicHtml(p.id);
   const el = $('#page');
   const keep = el.dataset.key === p.kind + (p.id || '') ? el.scrollTop : 0;

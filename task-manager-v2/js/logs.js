@@ -85,12 +85,12 @@ const CHO_SET = new Set([...CHO]);
 const norm = x => String(x ?? '').normalize('NFC').toLowerCase().replace(/[\s\-_.]+/g, '');
 const cho = x => [...norm(x)].map(ch => { const c = ch.charCodeAt(0); return c >= 0xAC00 && c <= 0xD7A3 ? CHO[Math.floor((c - 0xAC00) / 588)] : ch; }).join('');
 const hit = (t, text) => !!text && (norm(text).includes(t) || ([...t].every(ch => CHO_SET.has(ch)) && cho(text).includes(t)));
-function findTasks(query) {
+export function findTasks(query, exclude = composer.taskIds) {
   const terms = String(query || '').normalize('NFC').trim().split(/\s+/).map(norm).filter(Boolean);
   if (!terms.length) return [];
   const out = [];
   for (const t of liveTasks()) {
-    if (composer.taskIds.includes(t.id)) continue;
+    if (exclude.includes(t.id)) continue;
     const title = [t.title, t.id];
     const other = [t.memo, ...S.taskLabels(st.doc, t).map(l => l.name), ...S.taskTopics(st.doc, t).map(g => g.name), ...S.logsOfTask(st.logs, t.id).map(l => l.body)];
     let score = 0, ok = true;

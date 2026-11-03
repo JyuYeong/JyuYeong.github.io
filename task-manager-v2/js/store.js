@@ -73,7 +73,7 @@ const stamp = (o, ts = nowIso()) => { o.updated_at = ts; return o; };
 const live = arr => (arr || []).filter(x => !x.deleted_at);
 
 export function emptyDoc() {
-  return { schema: SCHEMA, version: VERSION, updated_at: nowIso(), labels: [], topics: [], tasks: [], views: [], ticker: [], settings: [] };
+  return { schema: SCHEMA, version: VERSION, updated_at: nowIso(), labels: [], topics: [], tasks: [], views: [], ticker: [], settings: [], checks: [] };
 }
 
 // ---------- 라벨 ----------
@@ -379,16 +379,60 @@ export function normalizeLogs(ld) {
   return d;
 }
 
+// ---------- 오늘 할 일 (V5.7) ----------
+// core 문서의 checks 배열. Task와 별개로 "오늘 지금 할 일"과 그 순서를 관리한다
+// { id: 'C-…', title, task_id|null, first_day(최초 작성일, 바뀌지 않음), day(오늘 목록에 올라온 날 / Keep이면 다시 꺼낼 날|null),
+//   keep, order, done_at, done_day, marked(완료하며 연결 Task의 날짜별 체크를 찍었는지), created_at, updated_at, deleted_at }
+// 못 끝낸 항목은 다음 날 그대로 남고(day는 그대로라 +N일로 보인다), Keep 날짜가 된 항목은 오늘 목록 맨 아래로 돌아온다
+export const liveChecks = doc => live(doc.checks);
+const byOrder = (a, b) => ordOf(a) - ordOf(b) || (a.created_at < b.created_at ? -1 : 1);
+export const isActiveCheck = c => !c.deleted_at && !c.done_at && !c.keep;
+export const activeChecks = doc => liveChecks(doc).filter(isActiveCheck).sort(byOrder);
+export const doneChecksOn = (doc, date) => liveChecks(doc).filter(c => c.done_at && c.done_day === date).sort((a, b) => (a.done_at < b.done_at ? -1 : 1));
+export const keptChecks = doc => liveChecks(doc).filter(c => !c.done_at && c.keep)
+  .sort((a, b) => (a.day || '9999') < (b.day || '9999') ? -1 : (a.day || '9999') > (b.day || '9999') ? 1 : byOrder(a, b));
+export const checkById = (doc, id) => doc.checks.find(c => c.id === id && !c.deleted_at) || null;
+const nextOrder = doc => activeChecks(doc).reduce((m, c) => Math.max(m, ordOf(c) === 1e9 ? -1 : c.order), -1) + 1;
+export function createCheck(doc, { title, task_id = null }) {
+  title = String(title || '').trim().slice(0, 200);
+  if (!title) return null;
+  const ts = nowIso(), today = todayKST();
+  const c = { id: uniqueId('C-', doc.checks), title, task_id: task_id || null, first_day: today, day: today, keep: false, order: nextOrder(doc), done_at: null, done_day: null, marked: false, created_at: ts, updated_at: ts, deleted_at: null };
+  doc.checks.push(c);
+  return c;
+}
+// Keep 날짜가 된 항목을 오늘 목록 맨 아래로 돌려놓는다. 바뀐 개수를 돌려준다
+export function rollChecks(doc, today = todayKST()) {
+  const due = liveChecks(doc).filter(c => !c.done_at && c.keep && c.day && c.day <= today).sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : byOrder(a, b)));
+  let o = nextOrder(doc);
+  const ts = nowIso();
+  for (const c of due) Object.assign(c, { keep: false, day: c.day, order: o++, updated_at: ts });
+  return due.length;
+}
+export function keepCheck(c, day = null) { Object.assign(c, { keep: true, day: day || null, updated_at: nowIso() }); }
+export function unkeepCheck(doc, c) { Object.assign(c, { keep: false, day: todayKST(), order: nextOrder(doc), updated_at: nowIso() }); }
+// 순서 바꾸기: ids는 오늘 목록의 새 순서. 바뀐 것만 updated_at을 고친다
+export function reorderChecks(doc, ids) {
+  const ts = nowIso();
+  ids.forEach((id, n) => { const c = checkById(doc, id); if (c && c.order !== n) { c.order = n; c.updated_at = ts; } });
+}
+export function checkToTop(doc, c) {
+  const list = activeChecks(doc).filter(x => x.id !== c.id);
+  reorderChecks(doc, [c.id, ...list.map(x => x.id)]);
+}
+export const carryDays = (c, today = todayKST()) => (c.day && c.day < today ? dayDiff(c.day, today) : 0);
+
 // ---------- 문서 정리 ----------
+const CORE_LISTS = ['labels', 'topics', 'tasks', 'views', 'ticker', 'settings', 'checks'];
 // 빠진 필드를 채우고, 30일 지난 삭제 항목을 실제로 지운다
 export function normalize(doc) {
   const d = { ...emptyDoc(), ...doc };
-  for (const k of ['labels', 'topics', 'tasks', 'views', 'ticker', 'settings']) if (!Array.isArray(d[k])) d[k] = [];
+  for (const k of CORE_LISTS) if (!Array.isArray(d[k])) d[k] = [];
   for (const t of d.tasks) {
     for (const k of ['label_ids', 'topic_ids', 'marked_days', 'milestones']) if (!Array.isArray(t[k])) t[k] = [];
   }
   const cut = new Date(Date.now() - PURGE_DAYS * 86400000).toISOString();
-  for (const k of ['labels', 'topics', 'tasks', 'views', 'ticker', 'settings']) d[k] = d[k].filter(x => !x.deleted_at || x.deleted_at > cut);
+  for (const k of CORE_LISTS) d[k] = d[k].filter(x => !x.deleted_at || x.deleted_at > cut);
   return d;
 }
 

@@ -33,7 +33,7 @@ const signedIn = () => ls('signed') === '1';
 // ---------- 직렬화·해시 ----------
 const byId = (a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 const isEntityArray = a => Array.isArray(a) && a.every(e => e && typeof e.id === 'string');
-const CORE_KEYS = ['labels', 'topics', 'tasks', 'views', 'ticker', 'settings'];
+const CORE_KEYS = ['labels', 'topics', 'tasks', 'views', 'ticker', 'settings', 'checks'];
 const META = new Set(['schema', 'version', 'updated_at', 'month']);
 function canonCore(d) {
   const out = { schema: S.SCHEMA, version: Math.max(d.version || 1, S.VERSION) };

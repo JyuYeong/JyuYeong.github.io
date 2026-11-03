@@ -6,6 +6,7 @@ import { timelineHtml } from './logs.js';
 import { plainMd } from './md.js';
 import { renderPage, labelHeadHtml } from './views.js';
 import { msCardHtml, msPanelHtml } from './ms.js';
+import { remainingCount } from './today.js';
 
 const doc = () => st.doc;
 const labels = () => S.liveLabels(doc());
@@ -284,6 +285,7 @@ export function renderSide() {
   $('#chips').innerHTML = items.map(it => `<button class="chip" data-act="filter" data-v="${it.v}" aria-pressed="${onList && st.ui.filter === it.v}">${it.icon ? '' : lead(it)}${esc(it.name)} <span class="n">${count(it.v)}</span></button>`).join('');
   const views = st.doc.views.filter(v => !v.deleted_at);
   $('#side').innerHTML = `<button class="nav rail-toggle" data-act="rail-toggle" aria-expanded="${st.ui.railOpen}" title="메뉴 펼치기/접기">${ic(st.ui.railOpen ? 'chevL' : 'chevR')}<span class="lbl">접기</span></button>`
+    + `<button class="nav" data-act="page-today" aria-pressed="${st.ui.page.kind === 'today'}" title="오늘 할 일">${ic('today')}<span class="lbl">오늘 할 일</span>${remainingCount() ? `<span class="n">${remainingCount()}</span>` : ''}</button>`
     + `<button class="nav" data-act="page-dash" aria-pressed="${st.ui.page.kind === 'dash'}" title="대시보드">${ic('dash')}<span class="lbl">대시보드</span></button><h3>라벨</h3>`
     + items.map(it => `<button class="nav" data-act="filter" data-v="${it.v}" aria-pressed="${onList && st.ui.filter === it.v}" title="${esc(it.name)}">${lead(it)}<span class="lbl">${esc(it.name)}</span><span class="n">${count(it.v)}</span></button>`).join('')
     + `<button class="vh" data-act="toggle-views" aria-expanded="${st.ui.viewsOpen}">${ic('chev')}저장된 뷰</button>`
