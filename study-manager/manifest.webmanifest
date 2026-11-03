@@ -2,7 +2,7 @@
   "name": "Study Manager",
   "short_name": "Study",
   "description": "문장을 등록하고 빈칸 문제·조회 모드로 외우는 개인용 공부 앱",
-  "id": "/study/",
+  "id": "/study-manager/",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
