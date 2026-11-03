@@ -880,8 +880,12 @@ body.dm-sheet .panel{height:94dvh}
 .ms.cur .msb i::after{content:"";width:8px;height:8px;border-radius:50%;background:var(--ms-cur);animation:ms-blink 1.6s ease-in-out infinite}
 @keyframes ms-blink{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.25;transform:scale(.7)}}
 @media (prefers-reduced-motion:reduce){.ms.cur .msb i::after{animation:none}}
-.mslist:not(.editing) .ms:not(:last-child)::before{content:"";position:absolute;left:21px;top:28px;bottom:-8px;width:2px;background:var(--ms-todo)}
-.mslist:not(.editing) .ms.done:not(:last-child)::before{background:var(--ms-done)}
+/* 연결선: 동그라미(left 6px + 지름 20px → 중심 16px) 중심에 맞추고, 줄 수가 늘어나도 끊김 없이 이어지도록 항목 높이 기준 위/아래 절반으로 그림 */
+.mslist:not(.editing) .ms::before,.mslist:not(.editing) .ms::after{content:"";position:absolute;left:15px;width:2px;background:var(--ms-todo);pointer-events:none}
+.mslist:not(.editing) .ms::before{top:0;height:50%}
+.mslist:not(.editing) .ms::after{top:50%;bottom:0}
+.mslist:not(.editing) .ms:first-child::before,.mslist:not(.editing) .ms:last-child::after{display:none}
+.mslist:not(.editing) .ms.done::after,.mslist:not(.editing) .ms.done+.ms::before{background:var(--ms-done)}
 .ms .msn{flex:1;min-width:0;font-size:14px;overflow-wrap:anywhere}
 .ms.done .msn{color:var(--muted)}
 .ms.cur .msn{font-weight:700}
@@ -902,6 +906,11 @@ body.dm-sheet .panel{height:94dvh}
 .msdn .ic{color:var(--ms-done)}
 .msimp{display:flex;flex-direction:column;gap:4px;max-height:50vh;overflow:auto;margin-top:8px}
 .msimp .sug{min-height:44px}
+
+/* V5.7.1 대시보드 표: 머리글과 숫자 열을 같은 폭·가운데 정렬로 맞춤 */
+.dtbl thead th:not(:first-child),.dtbl tbody td,.dtbl tfoot td{width:58px;min-width:58px;text-align:center}
+.dtbl td button{display:inline-block}
+@media (max-width:560px){.dtbl thead th:not(:first-child),.dtbl tbody td,.dtbl tfoot td{width:42px;min-width:42px}}
 
 /* ---------- V5.7 오늘 할 일 ---------- */
 .app[data-page="today"] .quick{display:none}
