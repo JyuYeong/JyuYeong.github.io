@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#171A21" media="(prefers-color-scheme: dark)">
+<title>지문 잠금 해제 테스트</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <h1>지문 잠금 해제 테스트</h1>
+  <p class="sub">패스키로 지문을 확인하고, 그때만 나오는 비밀값(PRF)으로 암호화 키를 꺼낼 수 있는지 확인합니다. 앱 데이터는 건드리지 않습니다.</p>
+
+  <section class="card" id="verdict"><b>결과:</b> <span id="verdictText">아래 순서대로 눌러 주세요</span></section>
+
+  <section class="card">
+    <h2>0. 이 기기 환경</h2>
+    <dl id="env"></dl>
+  </section>
+
+  <section class="card">
+    <h2>1. 테스트용 패스키 만들기</h2>
+    <p class="hint">지문(PC는 Windows Hello)을 확인한 뒤 이 기기에 "PRF 테스트" 패스키를 만듭니다.</p>
+    <button id="btnCreate">패스키 만들기</button>
+  </section>
+
+  <section class="card">
+    <h2>2. 지문으로 비밀값 받기 (2번 이상)</h2>
+    <p class="hint">처음 누르면 비밀값으로 테스트 문장을 암호화해 둡니다. 다음부터는 같은 비밀값이 나오는지, 그 값으로 문장이 풀리는지 확인합니다. 페이지를 닫았다 다시 열어서 눌러 봐도 됩니다.</p>
+    <button id="btnGet">지문으로 열기</button>
+  </section>
+
+  <section class="card">
+    <h2>3. 기록</h2>
+    <ol id="log"></ol>
+    <button id="btnReset" class="ghost">테스트 기록 지우기</button>
+    <p class="hint">이 버튼은 이 페이지의 기록만 지웁니다. 만든 패스키는 Google 비밀번호 관리자(PC는 Windows 설정 → 계정 → 패스키)에서 <b>jyuyeong.github.io · prf-test</b>를 직접 지우면 됩니다.</p>
+  </section>
+</main>
+<script src="test.js"></script>
+</body>
+</html>
