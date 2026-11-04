@@ -960,14 +960,7 @@ body.dm-sheet .panel{height:94dvh}
 @media (max-width:480px){.tdt{font-size:14.5px}.td.kept{flex-wrap:wrap}.tdkd{order:0}}
 @media (prefers-reduced-motion:reduce){.tdh .ic{transition:none}}
 
-/* 마감 변경 이력 (V5.8): 상세 하단, 생성·수정 시각 위. 많아지면 안에서 스크롤 */
-.pf{flex-wrap:wrap}
-.duehist{flex-basis:100%;min-width:0;font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
-.duehist .hd{display:block;margin-bottom:2px;font-weight:600}
-.duehist ul{list-style:none;margin:0;padding:0;max-height:92px;overflow-y:auto;overscroll-behavior:contain}
-.duehist li{display:flex;flex-wrap:wrap;gap:0 10px;line-height:1.6}
-.duehist .at{opacity:.85}
-.duehist .ch{color:var(--ink2)}
-.duehist .dd{font-weight:600}
-.duehist .dd.late{color:var(--dc-over)}
-.pf .duehist{font-size:11px}
+/* 지문으로 열기 (V7.1) */
+.gate .btn.bio,.vpindlg .btn.bio{display:inline-flex;align-items:center;justify-content:center;gap:8px;margin-top:8px}
+.vpindlg .btn.bio{width:100%}
+.btn.bio .ic{width:20px;height:20px}

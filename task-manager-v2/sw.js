@@ -5,7 +5,7 @@
 // - 파일을 추가·삭제하면 FILES를 고치고, 배포할 때마다 VERSION 숫자를 올린다.
 const VERSION = 'tm2-4';
 const FILES = [
-  './', './index.html', './style.css', './manifest.webmanifest', './js/pwa.js', './js/config.js',
+  './', './index.html', './style.css', './manifest.webmanifest', './js/pwa.js', './js/config.js', './js/bio.js',
   './js/dialogs.js', './js/logs.js', './js/main.js', './js/md.js', './js/ms.js', './js/render.js',
   './js/state.js', './js/store.js', './js/sync.js', './js/today.js', './js/util.js',
   './js/vault.js', './js/vaultui.js', './js/vcrypto.js', './js/views.js', './icons/icon.svg',

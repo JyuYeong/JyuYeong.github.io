@@ -266,3 +266,7 @@ body.search-open .search{display:flex}
   .list{max-width:880px}
 }
 @media (prefers-reduced-motion:reduce){.panel,body.no-sel .panel,.dots.shake{transition:none;animation:none}}
+
+/* 지문으로 열기 (M5.1) */
+.gate .btn.bio{display:inline-flex;align-items:center;justify-content:center;gap:8px;margin:22px auto 0;min-width:200px}
+.gate .btn.bio .ic{width:22px;height:22px}

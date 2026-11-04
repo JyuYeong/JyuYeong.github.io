@@ -6,6 +6,7 @@ export const wide = () => matchMedia('(min-width:700px)').matches;
 
 // ---------- 아이콘 ----------
 const P = {
+  finger: '<path d="M6.5 5.5A8 8 0 0120 12v1M4 9.5A8 8 0 004 12v2M8 20a10 10 0 001-5v-3a3 3 0 016 0v1.5M12 12v3a13 13 0 01-1.6 6.2M16 16.5a17 17 0 01-.8 3.8M7.5 12a4.5 4.5 0 019 0v1"/>',
   x: '<path d="M6 6l12 12M18 6L6 18"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',

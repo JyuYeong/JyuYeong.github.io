@@ -5,6 +5,7 @@ import { $, esc, ic, toast, dlg, openDlg, dlgIs, setDlgBody, openMenu, armed, co
 import * as Vault from './vault.js';
 import { V } from './vault.js';
 import { PW_MIN, pwError, isPin } from './vcrypto.js';
+import * as Bio from './bio.js';
 
 const IDLE_MS = 5 * 60 * 1000;
 export const vu = { returnTo: null, tab: 'work', open: new Set(), revealed: new Set(), q: '', hl: null, gate: null, msg: '', busy: false, recovery: null, syncInfo: () => ({}) };
@@ -14,6 +15,12 @@ const labelsAll = () => S.liveLabels(st.doc);
 const labelById = id => S.labelById(st.doc, id);
 const dot = l => `<span class="dot" style="background:${l ? esc(l.color) : 'var(--dot)'}"></span>`;
 const isVaultPage = () => st.ui.page.kind === 'vault';
+// 지문으로 열기 (V7.1, 모바일만): 이 기기 PIN 대신 지문으로 데이터 키를 꺼낸다. 이 기기에만 저장
+const bio = Bio.makeBio({ key: 'tm2-bio', label: 'Task Manager v2', info: 'tm2-bio-v1' });
+let bioOk = false;
+Bio.available().then(v => { bioOk = v; if (v && !V.unlocked) rerender(); });
+const bioOn = () => bioOk && !!V.meta && !!V.device && bio.enabled(V.meta.vault_id);
+const bioBtn = act => (bioOn() ? `<button type="button" class="btn bio" data-act="${act}">${ic('finger')}지문으로 열기</button>` : '');
 
 // ---------- 잠금 화면 ----------
 const pwIn = (id, label, ac = 'current-password') => `<label class="fl" for="${id}">${label}</label><input class="in" id="${id}" type="password" autocomplete="${ac}" minlength="${PW_MIN}" maxlength="200" required>`;
@@ -61,7 +68,7 @@ function gateHtml() {
   }
   return `<form class="gate" id="vPinForm" autocomplete="off"><h3>${ic('lock')}보안 영역 잠김</h3>
     ${pinIn('vPin', 'PIN (숫자 4자리)')}
-    ${msgHtml()}<button class="btn primary" type="submit"${vu.busy ? ' disabled' : ''}>${vu.busy ? '확인 중…' : '열기'}</button>
+    ${msgHtml()}<button class="btn primary" type="submit"${vu.busy ? ' disabled' : ''}>${vu.busy ? '확인 중…' : '열기'}</button>${bioBtn('v-bio')}
     <div class="glinks"><button type="button" class="lnk" data-act="v-gate" data-v="register">마스터 비밀번호로 열기</button><button type="button" class="lnk" data-act="v-gate" data-v="recover">복구 키로 열기</button></div></form>`;
 }
 
@@ -253,7 +260,7 @@ function pinDlgBody(msg = '') {
   return `<form id="vPinDlg" autocomplete="off" class="vform vpindlg">
     ${pinIn('vdPin', 'PIN (숫자 4자리)')}
     ${msg ? `<p class="gmsg" role="alert">${esc(msg)}</p>` : ''}
-    <div class="btns"><button type="button" class="btn" data-act="close-dlg">취소</button><button type="submit" class="btn primary"${pinDlgBusy ? ' disabled' : ''}>${pinDlgBusy ? '확인 중…' : '열기'}</button></div>
+    <div class="btns"><button type="button" class="btn" data-act="close-dlg">취소</button><button type="submit" class="btn primary"${pinDlgBusy ? ' disabled' : ''}>${pinDlgBusy ? '확인 중…' : '열기'}</button></div>${bioBtn('v-bio-dlg')}
     <div class="glinks"><button type="button" class="lnk" data-act="v-dlg-gate" data-v="register">마스터 비밀번호로 열기</button><button type="button" class="lnk" data-act="v-dlg-gate" data-v="recover">복구 키로 열기</button></div></form>`;
 }
 function unlockHere() {
@@ -261,7 +268,38 @@ function unlockHere() {
   if (!V.meta || !V.device || V.conflict || vu.recovery) { goGate(null); return; }
   pinDlgBusy = false;
   openDlg('vunlock', '보안 영역 열기', pinDlgBody());
-  requestAnimationFrame(() => $('#vdPin')?.focus());
+  if (bioOn()) bioUnlock(true); // 지문 창을 먼저 띄우고, 취소하면 PIN 창이 그대로 남는다
+  else requestAnimationFrame(() => $('#vdPin')?.focus());
+}
+// 지문으로 열기. inDlg면 라벨 보기 등의 PIN 창(제자리 열기)에서
+let bioBusy = false;
+async function bioUnlock(inDlg = false) {
+  if (bioBusy || V.unlocked || !bioOn()) return;
+  bioBusy = true;
+  try {
+    const raw = await bio.unlock(V.meta.vault_id);
+    await Vault.unlockWithRaw(raw);
+    raw.fill(0);
+    if (V.device?.fails) { V.device.fails = 0; await S.kvPut('vault-device', V.device); }
+    if (inDlg && dlgIs('vunlock')) dlg.close();
+    vu.msg = ''; vu.gate = null;
+    afterUnlock();
+  } catch (e) {
+    if (V.unlocked) return;
+    const msg = e.code === 'off' ? '' : Bio.message(e) + (e.code === 'bad' ? '' : '. PIN으로 열 수 있습니다');
+    if (inDlg) { if (dlgIs('vunlock')) setDlgBody(pinDlgBody(msg), '#vdPin'); }
+    else { vu.msg = msg; refresh('#vPin'); }
+  } finally { bioBusy = false; }
+}
+async function toggleBio() {
+  if (bioOn()) { bio.disable(); toast('이 기기에서 지문으로 열기를 껐습니다. 패스키는 Google 비밀번호 관리자에서 지울 수 있습니다'); rerender(); return; }
+  try {
+    const raw = await Vault.dekRaw();
+    await bio.enroll(raw, V.meta.vault_id);
+    raw.fill(0);
+    toast('지문으로 열기를 켰습니다. 다음부터 보안 영역을 지문으로 열 수 있습니다');
+  } catch (e) { toast(Bio.message(e)); }
+  rerender();
 }
 function goGate(gate) {
   if (dlgIs('vunlock')) dlg.close();
@@ -348,6 +386,7 @@ document.addEventListener('submit', async e => {
     await busyRun(async () => {
       const r = await Vault.unlockPin(pin);
       if (r.ok) { afterUnlock(); return; }
+      if (r.error === 'locked-out') bio.disable();
       vu.msg = r.error === 'locked-out' ? `PIN을 ${Vault.MAX_PIN_FAILS}번 틀려 이 기기의 PIN을 지웠습니다. 마스터 비밀번호로 다시 등록하세요` : `PIN이 맞지 않습니다 (남은 횟수 ${r.left})`;
     });
     requestAnimationFrame(() => $('#vPin')?.focus());
@@ -361,6 +400,7 @@ document.addEventListener('submit', async e => {
     if (!dlgIs('vunlock')) { if (r.ok) afterUnlock(); return; } // 확인 중에 창을 닫은 경우
     if (r.ok) { dlg.close(); afterUnlock(); return; }
     if (r.error === 'locked-out') {
+      bio.disable();
       goGate('register');
       vu.msg = `PIN을 ${Vault.MAX_PIN_FAILS}번 틀려 이 기기의 PIN을 지웠습니다. 마스터 비밀번호로 다시 등록하세요`; refresh('#vPw');
       return;
@@ -449,7 +489,9 @@ document.addEventListener('click', async e => {
   if (!el || el.disabled) return;
   const act = el.dataset.act, id = el.dataset.id;
   switch (act) {
-    case 'v-open': vu.returnTo = null; st.ui.page = { kind: 'vault', id: null }; refresh(); break;
+    case 'v-open': vu.returnTo = null; st.ui.page = { kind: 'vault', id: null }; refresh(); if (!V.unlocked && bioOn() && !vu.gate) bioUnlock(); break;
+    case 'v-bio': bioUnlock(); break;
+    case 'v-bio-dlg': bioUnlock(true); break;
     case 'v-unlock-here': unlockHere(); break;
     case 'v-dlg-gate': goGate(el.dataset.v || null); break;
     case 'v-gate': vu.gate = el.dataset.v || null; vu.msg = ''; refresh(); requestAnimationFrame(() => $('#page .gate input')?.focus()); break;
@@ -501,6 +543,7 @@ document.addEventListener('click', async e => {
     case 'v-settings':
       openMenu(el, [
         { label: '이 기기 PIN 변경', onPick: pinChangeDialog },
+        ...(bioOk && V.device ? [{ label: `지문으로 열기 ${bioOn() ? '끄기' : '켜기'} (이 기기)`, icon: ic('finger'), onPick: toggleBio }] : []),
         { label: '마스터 비밀번호 변경', onPick: pwChangeDialog },
         { label: '복구 키 재발급', note: '이전 복구 키는 더 이상 쓸 수 없습니다', onPick: async () => { vu.recovery = await Vault.reissueRecovery(); refresh(); } },
       ]);

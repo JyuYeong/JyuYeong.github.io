@@ -4,8 +4,9 @@ import * as C from './crypto.js';
 import * as S from './store.js';
 import * as Q from './search.js';
 import * as Sync from './sync.js';
+import * as Bio from './bio.js';
 
-export const VERSION = 'M3.6';
+export const VERSION = 'M5.1';
 const IDLE_MS = 5 * 60 * 1000;
 const MAX_FAILS = 5;
 const FAIL_WAIT_MS = 30 * 1000;
@@ -36,6 +37,7 @@ const P = {
   del: '<path d="M9 6h11v12H9l-6-6z"/><path d="M12 10l4 4M16 10l-4 4"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>',
   shield: '<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6z"/>',
+  finger: '<path d="M6.5 5.5A8 8 0 0120 12v1M4 9.5A8 8 0 004 12v2M8 20a10 10 0 001-5v-3a3 3 0 016 0v1.5M12 12v3a13 13 0 01-1.6 6.2M16 16.5a17 17 0 01-.8 3.8M7.5 12a4.5 4.5 0 019 0v1"/>',
 };
 const ic = (name, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" aria-hidden="true">${P[name]}</svg>`;
 const rkeyHtml = k => k.split('-').map((g, i, arr) => `<span>${esc(g)}${i < arr.length - 1 ? '-' : ''}</span>`).join('');
@@ -49,6 +51,10 @@ let unlocked = false;
 const ui = { view: 'accounts', sel: null, draft: null, revealed: new Set(), q: '', searchOpen: false };
 try { localStorage.removeItem('im-workview'); } catch { /* 무시 */ } // 없앤 업무 트리의 보기 설정
 const VIEWS = { accounts: '계정', notes: '보안 메모', social: '소셜 관리' };
+// 지문 잠금 해제 (M5.1, 모바일만): 데이터 키를 지문 비밀값으로 감싸 이 기기에만 둔다
+const bio = Bio.makeBio({ key: 'im-bio', label: 'Info Manager', info: 'im-bio-v1' });
+let bioOk = false; // 이 기기에서 쓸 수 있는지 (boot에서 확인)
+const bioOn = () => bioOk && !!meta?.vault_id && bio.enabled(meta.vault_id);
 
 // ---------- 다른 탭 ----------
 // 같은 기기에서 두 탭이 동시에 열려 서로 덮어쓰지 않도록, 한 탭이 열리면 나머지 탭은 잠근다
@@ -159,12 +165,12 @@ function showGate(html) {
   gate.hidden = false;
   $('#app').hidden = true;
 }
-function padHtml({ title, sub = '', msg = '', msgInfo = false, leftFn = '' }) {
+function padHtml({ title, sub = '', msg = '', msgInfo = false, leftFn = '', extra = '' }) {
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(k => `<button data-k="${k}">${k}</button>`).join('');
   return `${LOGO}<h2>${esc(title)}</h2>${sub ? `<p>${sub}</p>` : ''}
     <div class="dots" id="dots" role="status" aria-label="입력한 자릿수 0">${'<i></i>'.repeat(4)}</div>
     <p class="gmsg ${msgInfo ? 'info' : ''}" id="gmsg">${esc(msg)}</p>
-    <div class="pad" id="pad">${keys}${leftFn || '<span class="blank"></span>'}<button data-k="0">0</button><button class="fn" data-k="bs" aria-label="지우기">${ic('del')}</button></div>`;
+    <div class="pad" id="pad">${keys}${leftFn || '<span class="blank"></span>'}<button data-k="0">0</button><button class="fn" data-k="bs" aria-label="지우기">${ic('del')}</button></div>${extra}`;
 }
 function startPad(onDone) {
   pad = { buf: '', onDone, busy: false };
@@ -309,8 +315,9 @@ async function setupFinish() {
 }
 
 // ---------- 잠금 해제 ----------
-function lockScreen(msg = '', info = true) {
-  showGate(padHtml({ title: 'PIN 입력', sub: 'Info Manager가 잠겨 있습니다', msg, msgInfo: info, leftFn: `<button class="fn" data-g="forgot">PIN을<br>잊었어요</button>` }));
+function lockScreen(msg = '', info = true, auto = false) {
+  const bioBtn = bioOn() ? `<button class="btn bio" data-g="bio">${ic('finger')}지문으로 열기</button>` : '';
+  showGate(padHtml({ title: 'PIN 입력', sub: 'Info Manager가 잠겨 있습니다', msg, msgInfo: info, leftFn: `<button class="fn" data-g="forgot">PIN을<br>잊었어요</button>`, extra: bioBtn }));
   startPad(async pin => {
     padMsg('여는 중…', true);
     try {
@@ -324,6 +331,25 @@ function lockScreen(msg = '', info = true) {
       padReset(`PIN이 맞지 않습니다 (${fails}/${MAX_FAILS})`);
     }
   });
+  if (auto && bioBtn && document.visibilityState === 'visible') setTimeout(bioOpen, 250);
+}
+// 지문으로 열기: 지문 비밀값으로 감싸 둔 데이터 키를 꺼내 연다
+let bioBusy = false;
+async function bioOpen() {
+  if (bioBusy || unlocked || !bioOn() || gate.hidden) return;
+  bioBusy = true;
+  padMsg('지문을 확인하는 중…', true);
+  try {
+    const raw = await bio.unlock(meta.vault_id);
+    const key = await crypto.subtle.importKey('raw', raw, { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+    raw.fill(0);
+    fails = 0;
+    await openWith(key);
+  } catch (e) {
+    if (unlocked) return;
+    if (e.code === 'bad') lockScreen(Bio.message(e), false);
+    else padMsg(e.code === 'off' ? '' : Bio.message(e) + '. PIN으로 열 수 있습니다', true);
+  } finally { bioBusy = false; }
 }
 async function openWith(key) {
   if (!meta.vault_id) { meta = { ...meta, vault_id: C.newVaultId() }; await S.put('meta', meta); } // M1·M2에서 만든 금고
@@ -386,6 +412,7 @@ function gateAction(act) {
     case 'forgot': return recoveryScreen();
     case 'rec-open': return recoveryOpen();
     case 'rec-cancel': rec.dek = null; return lockScreen();
+    case 'bio': return bioOpen();
   }
 }
 
@@ -420,7 +447,7 @@ async function lock(msg = '') {
   for (const id of ['#side', '#chips', '#bar', '#list', '#panel']) $(id).innerHTML = '';
   document.body.classList.remove('sheet-open');
   document.body.classList.add('no-sel');
-  lockScreen(msg);
+  lockScreen(msg, true, true);
 }
 function checkIdle() {
   if (unlocked && Date.now() - lastAct >= IDLE_MS) lock('5분 동안 조작이 없어 잠겼습니다');
@@ -894,6 +921,7 @@ function openSettings() {
   openDialog('설정', `${driveSection()}<div class="menu">
       <button class="mi" data-s="pin">${ic('key')}PIN 변경</button>
       <button class="mi" data-s="recovery">${ic('shield')}복구 키 다시 만들기</button>
+      ${bioOk ? `<button class="mi" data-s="bio">${ic('finger')}지문으로 열기<span class="sub">${bioOn() ? '켜짐' : '꺼짐'} · 이 기기만</span></button>` : ''}
       <button class="mi" data-s="lock">${ic('lock')}지금 잠그기<span class="sub">5분 무조작 시 자동</span></button>
       <button class="mi danger" data-s="wipe">${ic('trash')}이 기기의 데이터 삭제</button>
     </div>
@@ -906,7 +934,7 @@ dlg().addEventListener('click', e => {
   const b = e.target.closest('[data-s]');
   if (!b) return;
   ({
-    pin: dlgPin, recovery: dlgRecovery, lock: () => { closeDialog(); lock(); }, wipe: dlgWipe,
+    pin: dlgPin, recovery: dlgRecovery, lock: () => { closeDialog(); lock(); }, wipe: dlgWipe, bio: toggleBio,
     'drive-connect': () => { closeDialog(); connectDrive(); },
     'drive-sync': () => { closeDialog(); Sync.syncNow(); },
     'drive-off': async () => {
@@ -916,6 +944,20 @@ dlg().addEventListener('click', e => {
     },
   })[b.dataset.s]();
 });
+// 지문으로 열기 켜기·끄기 (이 기기만). 켤 때 패스키를 만들고 지문을 한두 번 확인한다
+async function toggleBio() {
+  closeDialog();
+  if (bioOn()) {
+    if (!(await confirmDialog('지문으로 열기 끄기', '이 기기에서 지문으로 여는 기능을 끕니다. PIN으로는 그대로 열 수 있습니다. 만들어 둔 패스키는 Google 비밀번호 관리자에서 지울 수 있습니다.', '끄기'))) return;
+    bio.disable(); toast('지문으로 열기를 껐습니다'); return;
+  }
+  try {
+    const raw = new Uint8Array(await crypto.subtle.exportKey('raw', dek));
+    await bio.enroll(raw, meta.vault_id);
+    raw.fill(0);
+    toast('지문으로 열기를 켰습니다. 다음부터 잠금 화면에서 지문으로 열 수 있습니다');
+  } catch (e) { toast(Bio.message(e)); }
+}
 const pinInput = (id, label) => `<div><label class="fl" for="${id}">${label}</label><input class="in" id="${id}" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" style="letter-spacing:.4em;font-family:var(--mono)"></div>`;
 function dlgPin() {
   const d = openDialog('PIN 변경', `<form id="pinForm" autocomplete="off" style="display:flex;flex-direction:column;gap:14px">${pinInput('pCur', '현재 PIN')}${pinInput('pNew', '새 PIN 4자리')}${pinInput('pNew2', '새 PIN 확인')}<p class="note" id="pErr" hidden></p></form>`,
@@ -1191,7 +1233,8 @@ Sync.init({
 async function boot() {
   if (top !== self) { document.body.textContent = ''; return; } // 다른 페이지 안에 끼워 넣어 쓰지 못하게
   meta = await S.get('meta');
-  if (meta) lockScreen();
+  bioOk = await Bio.available();
+  if (meta) lockScreen('', true, true);
   else setupIntro();
 }
 boot();

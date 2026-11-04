@@ -78,6 +78,12 @@ export async function createVault(password, pin) {
   notify('meta');
   return recovery;
 }
+// 지문으로 열기 (V7.1): 지문 비밀값으로 감싸 둔 데이터 키(raw)로 연다
+export async function unlockWithRaw(raw) {
+  const dek = await crypto.subtle.importKey('raw', raw, { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+  await openDoc(dek);
+}
+export const dekRaw = async () => new Uint8Array(await crypto.subtle.exportKey('raw', V.dek));
 export async function registerDevice(password, pin) {
   const dek = await C.unlockWithPassword(V.meta, password);
   V.device = await C.wrapForDevice(dek, V.meta.vault_id, pin);

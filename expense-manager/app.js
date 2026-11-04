@@ -1,8 +1,9 @@
 // Expense Manager: PIN 잠금, 빠른 입력, 지불방식·카테고리 관리(M1) / 내역 표, 템플릿, 테마(M2) / Google Drive 동기화, PIN 재설정(M3) / 통계, 카드 실적, 고정 지출, 티커(M4)
 import * as S from './store.js';
 import * as Sync from './sync.js';
+import * as Bio from './bio.js';
 
-export const VERSION = 'M4';
+export const VERSION = 'M5.1';
 const MAX_FAILS = 5;
 const FAIL_WAIT_MS = 30 * 1000;
 
@@ -12,6 +13,7 @@ const won = n => `${S.fmtWon(n)}원`;
 
 // ---------- 아이콘 ----------
 const P = {
+  finger: '<path d="M6.5 5.5A8 8 0 0120 12v1M4 9.5A8 8 0 004 12v2M8 20a10 10 0 001-5v-3a3 3 0 016 0v1.5M12 12v3a13 13 0 01-1.6 6.2M16 16.5a17 17 0 01-.8 3.8M7.5 12a4.5 4.5 0 019 0v1"/>',
   x: '<path d="M6 6l12 12M18 6L6 18"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   del: '<path d="M9 6h11v12H9l-6-6z"/><path d="M12 10l4 4M16 10l-4 4"/>',
@@ -46,6 +48,11 @@ const LOGO = LOGO_SVG.replace('<svg ', '<svg class="glogo" ');
 // ---------- 상태 ----------
 let doc = null;
 let unlocked = false;
+// 지문 잠금 해제 (M5.1, 모바일만). 데이터는 평문이므로 PIN과 같은 '잠금 화면' 역할: 지문 비밀값으로 감싼 확인용 값이 풀리면 연다
+const bio = Bio.makeBio({ key: 'em-bio', label: 'Expense Manager', info: 'em-bio-v1' });
+const BIO_BIND = 'em';
+let bioOk = false;
+const bioOn = () => bioOk && bio.enabled(BIO_BIND);
 const VIEWS = { input: { label: '입력', icon: 'edit' }, history: { label: '내역', icon: 'list' }, stats: { label: '통계', icon: 'chart' }, fixed: { label: '고정', icon: 'repeat' }, manage: { label: '관리', icon: 'gear' } };
 // formIn: 입력 폼이 어디 있는지 ('page' 입력 화면 / 'dialog' 내역에서 연 수정 창). stash: 수정 창을 여는 동안 보관한 입력 화면 상태
 const ui = { view: 'input', draft: null, touched: new Set(), auto: new Set(), editId: null, ac: [], acIdx: -1, acOpen: false, err: null, formIn: 'page', stash: null, delArmed: false,
@@ -160,12 +167,12 @@ function showGate(html) {
   gate.hidden = false;
   $('#app').hidden = true;
 }
-function padHtml({ title, sub = '', msg = '', msgInfo = false, leftFn = '' }) {
+function padHtml({ title, sub = '', msg = '', msgInfo = false, leftFn = '', extra = '' }) {
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9'].map(k => `<button data-k="${k}">${k}</button>`).join('');
   return `${LOGO}<h2>${esc(title)}</h2>${sub ? `<p>${sub}</p>` : ''}
     <div class="dots" id="dots" role="status" aria-label="입력한 자릿수 0">${'<i></i>'.repeat(4)}</div>
     <p class="gmsg ${msgInfo ? 'info' : ''}" id="gmsg">${esc(msg)}</p>
-    <div class="pad" id="pad">${keys}${leftFn || '<span class="blank"></span>'}<button data-k="0">0</button><button class="fn" data-k="bs" aria-label="지우기">${ic('del')}</button></div>`;
+    <div class="pad" id="pad">${keys}${leftFn || '<span class="blank"></span>'}<button data-k="0">0</button><button class="fn" data-k="bs" aria-label="지우기">${ic('del')}</button></div>${extra}`;
 }
 function startPad(onDone) { pad = { buf: '', onDone, busy: false }; drawDots(); applyWait(); }
 function drawDots() {
@@ -240,6 +247,7 @@ async function gateAction(act) {
     lockScreen(`Drive 데이터를 불러왔습니다 (지출 ${S.live(doc.expenses).length}건). 다른 기기에서 쓰던 PIN을 입력하세요`);
     return;
   }
+  if (act === 'bio') { bioOpen(); return; }
   if (act === 'forgot') { forgotScreen(); return; }
   if (act === 'forgot-back') { lockScreen(); return; }
   if (act === 'forgot-google') {
@@ -287,14 +295,40 @@ function setupPin2(first) {
     enterApp('PIN을 정했습니다. 지불방식과 카테고리부터 등록하세요');
   });
 }
-function lockScreen(msg = '', info = true) {
-  showGate(padHtml({ title: 'Expense Manager', sub: 'PIN을 입력하세요', msg, msgInfo: info, leftFn: '<button class="fn" data-g="forgot">PIN을<br>잊었어요</button>' }));
+function lockScreen(msg = '', info = true, auto = false) {
+  const bioBtn = bioOn() ? `<button class="btn bio" data-g="bio">${ic('finger')}지문으로 열기</button>` : '';
+  showGate(padHtml({ title: 'Expense Manager', sub: 'PIN을 입력하세요', msg, msgInfo: info, leftFn: '<button class="fn" data-g="forgot">PIN을<br>잊었어요</button>', extra: bioBtn }));
   startPad(async pin => {
     if (await S.checkPin(S.setting(doc, 'pin'), pin)) { fails = 0; enterApp(); return; }
     fails++;
     if (fails >= MAX_FAILS) { fails = 0; waitUntil = Date.now() + FAIL_WAIT_MS; padReset(''); applyWait(); return; }
     padReset(`PIN이 맞지 않습니다 (${fails}/${MAX_FAILS})`);
   });
+  if (auto && bioBtn && document.visibilityState === 'visible') setTimeout(bioOpen, 250);
+}
+let bioBusy = false;
+async function bioOpen() {
+  if (bioBusy || unlocked || !bioOn() || gate.hidden) return;
+  bioBusy = true;
+  padMsg('지문을 확인하는 중…', true);
+  try { (await bio.unlock(BIO_BIND)).fill(0); fails = 0; enterApp(); }
+  catch (e) {
+    if (unlocked) return;
+    if (e.code === 'bad') lockScreen(Bio.message(e), false);
+    else padMsg(e.code === 'off' ? '' : Bio.message(e) + '. PIN으로 열 수 있습니다', true);
+  } finally { bioBusy = false; }
+}
+async function toggleBio() {
+  if (bioOn()) {
+    if (!(await confirmDialog('지문으로 열기 끄기', '이 기기에서 지문으로 여는 기능을 끕니다. PIN으로는 그대로 열 수 있습니다. 만들어 둔 패스키는 Google 비밀번호 관리자에서 지울 수 있습니다.', '끄기'))) return;
+    bio.disable(); toast('지문으로 열기를 껐습니다'); renderView(); return;
+  }
+  try {
+    const token = crypto.getRandomValues(new Uint8Array(32));
+    await bio.enroll(token, BIO_BIND);
+    toast('지문으로 열기를 켰습니다. 다음부터 잠금 화면에서 지문으로 열 수 있습니다');
+  } catch (e) { toast(Bio.message(e)); }
+  renderView();
 }
 function enterApp(msg) {
   pad = null;
@@ -311,7 +345,7 @@ async function lock() {
   await saving;
   unlocked = false;
   closeDialog();
-  lockScreen('잠갔습니다');
+  lockScreen('잠갔습니다', true, true);
 }
 
 // =====================================================================
@@ -1216,7 +1250,7 @@ function manageHtml() {
       <div class="kv"><span>Google Drive 동기화</span><span id="syncState">${syncStateHtml()}</span></div>
       <div class="setrow">${Sync.signedIn() ? '<button class="btn" data-act="sync-now">지금 동기화</button><button class="btn" data-act="sign-out">Google 로그아웃 (동기화 중지)</button>' : '<button class="btn primary" data-act="sign-in">Google 로그인 · Drive 동기화 켜기</button>'}</div>
       <p class="hint">데이터는 Drive의 <b>내 드라이브 › 10 Expense Manager › db</b>에 <code>em-data.json</code>으로 저장되고, 하루 한 번 백업(최근 14개)을 남깁니다. 바뀐 내용은 몇 초 안에, 그 밖에는 1분마다 맞춥니다.</p>
-      <div class="setrow"><button class="btn" data-act="pin-change">PIN 변경</button><button class="btn" data-act="export">내보내기 (JSON)</button><button class="btn" data-act="import">가져오기 (JSON)</button><button class="btn danger" data-act="wipe">이 기기 데이터 지우기</button></div>
+      <div class="setrow"><button class="btn" data-act="pin-change">PIN 변경</button>${bioOk ? `<button class="btn" data-act="bio-toggle">${ic('finger')}지문으로 열기 ${bioOn() ? '끄기' : '켜기'}</button>` : ''}<button class="btn" data-act="export">내보내기 (JSON)</button><button class="btn" data-act="import">가져오기 (JSON)</button><button class="btn danger" data-act="wipe">이 기기 데이터 지우기</button></div>
       <p class="ver">Expense Manager ${VERSION} · 지출 ${S.live(doc.expenses).length}건</p></section>
   </div>`;
 }
@@ -1456,10 +1490,12 @@ document.addEventListener('click', async e => {
       await saving;
       await S.clearAll();
       Sync.forgetDevice();
+      bio.disable();
       location.reload();
       return;
     }
     case 'pin-change': dlgPin(); return;
+    case 'bio-toggle': toggleBio(); return;
     case 'export': exportJson(); return;
     case 'import': $('#importFile').click(); return;
   }
@@ -1481,7 +1517,8 @@ async function boot() {
   S.purgeOld(doc);
   if (!S.storageOk) toast('브라우저 저장소를 쓸 수 없어 이 탭을 닫으면 내용이 사라집니다');
   Sync.init({ getDoc: () => doc, applyMerged, onStatus: renderSaveLabel });
+  bioOk = await Bio.available();
   if (!S.setting(doc, 'pin')) setupIntro('', false);
-  else lockScreen();
+  else lockScreen('', true, true);
 }
 boot();
