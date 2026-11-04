@@ -190,6 +190,12 @@ svg { display: block; }
 .key[data-k="+"], .key[data-k="="] { background: #E8DDFF; color: #6C4FD0; box-shadow: 0 5px 0 #C9B8F5; }
 .key:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 1px 0 #E9DCC4; }
 .solve-bar { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+.clear-btn {
+  height: 68px; padding: 0 14px; border-radius: 22px; flex: none; display: flex; align-items: center; gap: 4px;
+  background: #FFE1E8; color: #D9416A; font-size: 20px; box-shadow: 0 5px 0 #F6BFCD;
+}
+.clear-btn svg { width: 26px; height: 26px; }
+.clear-btn:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 1px 0 #F6BFCD; }
 .dice-btn { width: 68px; height: 68px; border-radius: 22px; background: #FFF0C9; font-size: 36px; box-shadow: 0 5px 0 #EED9B6; flex: none; }
 .dice-btn:active { transform: translateY(4px); box-shadow: 0 1px 0 #EED9B6; }
 .solve-btn {

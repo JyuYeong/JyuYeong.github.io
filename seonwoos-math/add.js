@@ -89,34 +89,36 @@ export function build(a, b, opt) {
     const dy = BY + dRow * RP, ry = BY + rRow * RP;
     const tensTerms = [aT * 10, bT * 10];
 
-    // 4. 가르기
-    const doSplit = opt.method === 'B' ? dNum - need > 0 : rest > 0;
-    if (doSplit) {
+    // 4. 가르기: 먼저 10을 만들 쪽 낱개가 몇 개인지 보여 주고, 그다음 다른 수를 가른다
+    {
       noDelay();
+      const pd = rest > 0 ? 450 : 0;
       if (second) {
-        moving.forEach((id, i) => cubes[id].x = dX + i * LP);
-        restIds.forEach((id, i) => cubes[id].x = dX + (need + i) * LP + GAP);
+        moving.forEach((id, i) => Object.assign(cubes[id], { x: dX + i * LP, d: pd }));
+        restIds.forEach((id, i) => Object.assign(cubes[id], { x: dX + (need + i) * LP + GAP, d: pd }));
       } else {
-        restIds.forEach((id, i) => cubes[id].x = dX + i * LP);
-        moving.forEach((id, i) => cubes[id].x = dX + (rest + i) * LP + GAP);
+        restIds.forEach((id, i) => Object.assign(cubes[id], { x: dX + i * LP, d: pd }));
+        moving.forEach((id, i) => Object.assign(cubes[id], { x: dX + (rest + i) * LP + GAP, d: pd }));
       }
+      const rcx0 = cubes[rOnes[0]].x, rcx1 = cubes[rOnes[rOnes.length - 1]].x + CUBE;
+      labels.sRecv = { x: (rcx0 + rcx1) / 2, y: ry + CUBE + 10, t: String(rOnes.length), o: 1, d: 0, cls: 'split ' + (second ? 'a' : 'b') };
       const mx0 = cubes[moving[0]].x, mx1 = cubes[moving[need - 1]].x + CUBE;
-      labels.sM = { x: (mx0 + mx1) / 2, y: dy + CUBE + 10, t: String(need), o: 1, d: 350, cls: 'split ' + (second ? 'b' : 'a') };
+      labels.sM = { x: (mx0 + mx1) / 2, y: dy + CUBE + 10, t: String(need), o: 1, d: pd + 400, cls: 'split ' + (second ? 'b' : 'a') };
       if (opt.method === 'A' && rest > 0) {
         const rx0 = cubes[restIds[0]].x, rx1 = cubes[restIds[rest - 1]].x + CUBE;
-        labels.sR = { x: (rx0 + rx1) / 2, y: dy + CUBE + 10, t: String(rest), o: 1, d: 350, cls: 'split ' + (second ? 'b' : 'a') };
+        labels.sR = { x: (rx0 + rx1) / 2, y: dy + CUBE + 10, t: String(rest), o: 1, d: pd + 400, cls: 'split ' + (second ? 'b' : 'a') };
       }
-      if (opt.method === 'B') labels[hD].t = second ? `${need} + ${dNum - need}` : `${dNum - need} + ${need}`;
+      if (opt.method === 'B' && dNum - need > 0) labels[hD].t = second ? `${need} + ${dNum - need}` : `${dNum - need} + ${need}`;
       const main = opt.method === 'B'
         ? (second ? join([a, need, b - need]) : join([a - need, need, b]))
         : join([...tensTerms, ...(second ? [aO, need, rest] : [rest, need, bO])]);
       formula = { top, main: '= ' + main };
-      snap('split', 1900);
+      snap('split', 2300 + pd);
     }
 
     // 5. 10 만들기 (옮기기)
     noDelay();
-    for (const k in labels) if (k === 'sM' || k === 'sR') labels[k].o = 0;
+    for (const k in labels) if (k === 'sM' || k === 'sR' || k === 'sRecv') labels[k].o = 0;
     rOnes.forEach((id, i) => { cubes[id].x = rX + i * TP; cubes[id].d = 0; });
     moving.forEach((id, i) => Object.assign(cubes[id], { x: rX + (rOnes.length + i) * TP, y: ry, d: 150 + i * 110 }));
     restIds.forEach((id, i) => Object.assign(cubes[id], { x: dX + i * LP, d: 300 + need * 110 }));
@@ -232,6 +234,7 @@ function renderInput(root, ctx) {
       <p class="warn" aria-live="polite"></p>
       <div class="keypad"></div>
       <div class="solve-bar">
+        <button class="clear-btn" aria-label="모두 지우고 새로 쓰기">${ctx.icons.eraser}<span>새로</span></button>
         <button class="dice-btn" aria-label="아무 문제">🎲</button>
         <button class="solve-btn">풀이 보기</button>
         <div class="solve-opts">
@@ -280,6 +283,7 @@ function renderInput(root, ctx) {
     boxes[0].classList.toggle('bad', err === 'over'); boxes[1].classList.toggle('bad', err === 'over');
     $('.check-btn').disabled = !st.shown || !st.vals[2] || !!pairErr();
     $('.solve-btn').disabled = !!pairErr();
+    $('.clear-btn').disabled = !st.vals[0] && !st.vals[1] && !st.vals[2];
     const nx = pad.querySelector('[data-k="next"]');
     if (nx) nx.disabled = st.idx === 2 || !st.vals[st.idx];
     root.querySelectorAll('[data-pref]').forEach(sg => sg.querySelectorAll('button').forEach(bt =>
@@ -335,6 +339,7 @@ function renderInput(root, ctx) {
     if (bx) { const i = +bx.dataset.box; if (i === 2 && !st.shown) return; st.idx = i; st.fresh = true; draw(); return; }
     if (e.target.closest('.check-btn')) check();
   });
+  $('.clear-btn').addEventListener('click', () => { Object.assign(st, freshInput()); draw(); });
   $('.dice-btn').addEventListener('click', () => {
     const [a, b] = randomPair();
     st.vals = [String(a), String(b), '']; st.idx = 2; st.shown = true; st.fresh = false;
