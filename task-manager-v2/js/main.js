@@ -194,12 +194,13 @@ document.addEventListener('click', async e => {
     case 'clear-start_date': case 'clear-due_date': {
       if (!cur) break;
       const f = act.slice(6);
+      const pd = cur.due_date, pt = cur.due_time;
       cur[f] = null;
-      if (f === 'due_date') cur.due_time = null;
+      if (f === 'due_date') { cur.due_time = null; S.noteDueChange(cur, pd, pt); }
       touch(cur); renderPanel();
       break;
     }
-    case 'toggle-allday': if (cur && cur.due_date) { cur.due_time = cur.due_time ? null : DEFAULT_TIME; touch(cur); renderPanel(); } break;
+    case 'toggle-allday': if (cur && cur.due_date) { const pt = cur.due_time; cur.due_time = pt ? null : DEFAULT_TIME; S.noteDueChange(cur, cur.due_date, pt); touch(cur); renderPanel(); } break;
     case 'toggle-props': st.ui.propsOpen = !st.ui.propsOpen; savePrefs(); renderPanel('[data-act="toggle-props"]'); break;
     case 'toggle-cal': st.ui.calOpen = !st.ui.calOpen; savePrefs(); renderPanel('[data-act="toggle-cal"]'); break;
     case 'toggle-daycheck': if (cur) { cur.day_check = !cur.day_check; if (cur.day_check) st.ui.calOpen = true; touch(cur); renderPanel('[data-act="toggle-daycheck"]'); } break;
@@ -412,11 +413,13 @@ document.addEventListener('change', e => {
   if (!t) return;
   const v = e.target.value;
   if (f === 'title' && !v.trim()) { e.target.value = t.title; return; }
+  const pd = t.due_date, pt = t.due_time;
   if (f === 'start_date' || f === 'due_date') {
     t[f] = v || null;
     if (f === 'due_date' && !v) t.due_time = null;
+    if (f === 'due_date') S.noteDueChange(t, pd, pt);
     touch(t); renderPanel();
-  } else if (f === 'due_time') { t.due_time = v || null; touch(t); renderPanel(); }
+  } else if (f === 'due_time') { t.due_time = v || null; S.noteDueChange(t, pd, pt); touch(t); renderPanel(); }
 });
 
 // ---------- 다이얼로그 입력 ----------

@@ -160,6 +160,7 @@ export function createTask(doc, fields = {}) {
     blocked_by: null,
     day_check: false, marked_days: [],
     milestones: [], // V5.6: [{ id, name, done: 'YYYY-MM-DD'|null, added, log_id }]
+    due_history: [], // V5.8: 마감 변경 이력 [{ at, from, to }]
     created_at: ts, updated_at: ts, completed_at: null, deleted_at: null,
     ...fields,
   };
@@ -167,6 +168,30 @@ export function createTask(doc, fields = {}) {
   return t;
 }
 export const taskById = (doc, id) => doc.tasks.find(t => t.id === id && !t.deleted_at) || null;
+
+// 마감 변경 이력 (V5.8): t.due_history = [{ at, from, to }] — from/to는 'YYYY-MM-DD' 또는 'YYYY-MM-DD HH:MM', 없으면 null
+// - 이력의 '하루'는 KST 07:00 ~ 다음 날 07:00 (새벽 작업을 전날로 묶기 위해, 이 이력에만 쓰는 기준)
+// - Task를 만든 날(위 기준)에는 마감이 바뀌어도 남기지 않는다. 그날의 마지막 마감이 이후 변경의 '변경 전'이 된다
+// - 마감을 처음 정한 것(이력 없음 + 이전 값 없음)도 변경으로 치지 않는다
+// - 같은 날 안에 다시 고치면 그날 기록의 '변경 후'만 마지막 값으로 바꾼다. 결국 원래대로면 그 기록은 지운다
+const DUE_DAY_SHIFT_MS = 2 * 3600 * 1000; // KST(+9h) − 7h = UTC +2h
+export const dueDay = v => { const ms = typeof v === 'number' ? v : Date.parse(v); return isNaN(ms) ? '' : new Date(ms + DUE_DAY_SHIFT_MS).toISOString().slice(0, 10); };
+export const dueKey = (d, tm) => (d ? (tm ? `${d} ${tm}` : d) : null);
+export function noteDueChange(t, prevDate, prevTime) {
+  const from = dueKey(prevDate, prevTime), to = dueKey(t.due_date, t.due_time);
+  if (from === to) return;
+  const now = Date.now(), at = new Date(now).toISOString(), day = dueDay(now);
+  if (t.created_at && dueDay(t.created_at) === day) return;
+  const h = Array.isArray(t.due_history) ? t.due_history : (t.due_history = []);
+  const last = h[h.length - 1];
+  if (last && dueDay(last.at) === day && last.to === from) {
+    last.to = to; last.at = at;
+    if (last.from === last.to) h.pop();
+    return;
+  }
+  if (!from && !h.length) return;
+  h.push({ at, from, to });
+}
 // Task에 붙은 라벨 (라벨 순서대로, 지워진 것 제외)
 export function taskLabels(doc, t) {
   return liveLabels(doc).filter(l => t.label_ids.includes(l.id));

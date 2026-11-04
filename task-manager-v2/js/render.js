@@ -302,6 +302,23 @@ export function tsFootHtml(t) {
   return [['생성', t.created_at], ['수정', t.updated_at], ['완료', t.status === 'done' ? t.completed_at : null]]
     .filter(([, v]) => fmtTs(v)).map(([l, v]) => `<span>${l} ${fmtTs(v)}</span>`).join('');
 }
+// 마감 변경 이력 (V5.8): 최근 것이 위. 날짜가 바뀐 경우 며칠 미뤘는지/당겼는지 함께
+function dueTxt(k) {
+  if (!k) return '없음';
+  const [d, tm] = k.split(' ');
+  return md(d) + (tm ? ' ' + tm : '');
+}
+export function dueHistHtml(t) {
+  const h = Array.isArray(t.due_history) ? t.due_history : [];
+  if (!h.length) return '';
+  const rows = h.slice().reverse().map(e => {
+    const fd = e.from && e.from.slice(0, 10), td = e.to && e.to.slice(0, 10);
+    const n = fd && td ? S.dayDiff(fd, td) : 0;
+    const delta = n ? `<span class="dd${n > 0 ? ' late' : ''}">${n > 0 ? '+' : '−'}${Math.abs(n)}일</span>` : '';
+    return `<li><span class="at">${fmtTs(e.at)}</span><span class="ch">${esc(dueTxt(e.from))} → ${esc(dueTxt(e.to))}</span>${delta}</li>`;
+  }).join('');
+  return `<div class="duehist"><span class="hd">마감 변경 ${h.length}회</span><ul>${rows}</ul></div>`;
+}
 function seg(field, options, cur, cls = '') {
   return `<div class="seg ${cls}" role="group">${options.map(([v, l]) => `<button type="button" data-act="set-${field}" data-v="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div>`;
 }
@@ -368,7 +385,7 @@ function panelHtml(t) {
 
     <section class="psec" id="logSec">${timelineHtml(t)}</section>
   </div>
-  <div class="pf"><p class="tsfoot" id="tsFoot">${tsFootHtml(t)}</p><button class="del" data-act="delete" data-id="${t.id}">${ic('trash')}삭제</button><button class="btn sm primary addlog" data-act="log-new">${ic('plus')}이력</button></div>`;
+  <div class="pf">${dueHistHtml(t)}<p class="tsfoot" id="tsFoot">${tsFootHtml(t)}</p><button class="del" data-act="delete" data-id="${t.id}">${ic('trash')}삭제</button><button class="btn sm primary addlog" data-act="log-new">${ic('plus')}이력</button></div>`;
 }
 export function growArea(el) { if (!el) return; el.style.height = 'auto'; el.style.height = el.scrollHeight + 2 + 'px'; }
 export function renderPanel(focusSel) {
