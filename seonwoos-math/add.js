@@ -430,6 +430,7 @@ function renderPlay(root, ctx, a, b) {
       <button class="cbtn" data-c="prev" aria-label="이전">${ctx.icons.prev}</button>
       <button class="cbtn main" data-c="next" aria-label="다음">${ctx.icons.next}</button>
       <button class="cbtn auto" data-c="auto" aria-label="자동">${ctx.icons.play}<span>자동</span></button>
+      <button class="cbtn to-input back" data-go="add" aria-label="덧셈식 만들기로">${ctx.icons.pencil}<span>식 만들기</span></button>
     </nav>
   </div>`;
 
@@ -548,13 +549,15 @@ function renderPlay(root, ctx, a, b) {
     if (p[key] === bt.dataset.v) return;
     p[key] = bt.dataset.v; ctx.save(); markOpts();
     stopAuto();
-    // 방법을 바꾸면 처음(빈 화면)부터 다시
+    // 방법을 바꾸면 처음(빈 화면)부터 다시 자동 재생
     setup();
+    startAuto();
   });
 
   markOpts();
   setup();
   requestAnimationFrame(fit);
+  startAuto(); // 풀이는 자동 재생으로 시작, 멈추거나 이전/다음을 누르면 단계별로
   window.__add = { go: n => go(n, true), steps: () => plan.steps, idx: () => idx }; // 테스트용
   return () => { stopAuto(); ro.disconnect(); };
 }

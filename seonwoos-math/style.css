@@ -296,6 +296,8 @@ svg { display: block; }
 .cbtn.auto { width: auto; padding: 0 20px; display: flex; gap: 6px; font-size: 22px; background: #FFF0C9; }
 .cbtn.auto.on { background: var(--yellow); color: #fff; }
 .cbtn.auto svg { width: 24px; height: 24px; }
+.cbtn.to-input { width: auto; margin-left: 18px; padding: 0 18px; display: flex; gap: 6px; font-size: 20px; background: #E8DDFF; color: #6C4FD0; box-shadow: 0 5px 0 #C9B8F5; }
+.cbtn.to-input svg { width: 24px; height: 24px; }
 .cbtn:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 1px 0 #E9DCC4; }
 
 /* ---------- 설정 ---------- */
