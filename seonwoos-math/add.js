@@ -191,80 +191,212 @@ export function renderAdd(root, ctx, query) {
   return renderPlay(root, ctx, a, b);
 }
 
+// 입력 화면 상태: 풀이를 보고 돌아와도 그대로 남고, 홈으로 나가면 지운다
+let inputState = null;
+const freshInput = () => ({ vals: ['', '', ''], idx: 0, fresh: false, shown: false, result: null });
+export function resetAddInput() { inputState = null; }
+
+function randomPair() {
+  let a, b;
+  if (Math.random() < .4) { a = 1 + Math.floor(Math.random() * 9); b = 1 + Math.floor(Math.random() * 9); }
+  else { a = 1 + Math.floor(Math.random() * 99); b = 1 + Math.floor(Math.random() * Math.min(99, 100 - a)); }
+  return [a, b];
+}
+
 function renderInput(root, ctx) {
-  const st = { vals: [String(ctx.prefs.lastA || ''), String(ctx.prefs.lastB || '')], idx: 0, fresh: true };
+  const p = ctx.prefs;
+  if (!inputState) inputState = freshInput();
+  const st = inputState;
+  st.result = null; // 결과 창은 다시 들어오면 닫혀 있게
   root.innerHTML = `
   <div class="screen add-input">
     <header class="bar">
       <button class="icon-btn back" data-go="" aria-label="처음으로">${ctx.icons.back}</button>
       <h2 class="bar-title">덧셈 배우기</h2>
-      <span></span>
+      <div class="seg mode" data-pref="inputMode" role="group" aria-label="입력 방식">
+        <button data-v="next">▶ 차례로</button><button data-v="expr">+ = 식으로</button>
+      </div>
     </header>
     <div class="input-body">
       <div class="expr">
         <button class="nbox a" data-box="0"></button>
-        <span class="op">+</span>
+        <span class="op op-plus">+</span>
         <button class="nbox b" data-box="1"></button>
-        <span class="op">=</span>
-        <span class="qmark">?</span>
+        <span class="op op-eq">=</span>
+        <span class="ans-slot">
+          <span class="qmark">?</span>
+          <button class="nbox ans" data-box="2"></button>
+        </span>
+        <button class="check-btn">정답<br>확인</button>
       </div>
       <p class="warn" aria-live="polite"></p>
-      <div class="keypad">
-        ${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button class="key" data-k="${n}">${n}</button>`).join('')}
-        <button class="key fn" data-k="rand" aria-label="아무 문제">🎲</button>
-        <button class="key" data-k="0">0</button>
-        <button class="key fn" data-k="del" aria-label="지우기">⌫</button>
+      <div class="keypad"></div>
+      <div class="solve-bar">
+        <button class="dice-btn" aria-label="아무 문제">🎲</button>
+        <button class="solve-btn">풀이 보기</button>
+        <div class="solve-opts">
+          <div class="seg" data-pref="method" role="group" aria-label="방법"><button data-v="A">자리별로</button><button data-v="B">10 채우기</button></div>
+          <div class="seg" data-pref="split" role="group" aria-label="가르는 수"><button data-v="second">뒤 수 가르기</button><button data-v="first">앞 수 가르기</button></div>
+        </div>
       </div>
-      <button class="go-btn">보기 ▶</button>
+    </div>
+    <div class="result-ov" hidden>
+      <div class="result-card">
+        <div class="r-emoji"></div>
+        <div class="r-msg"></div>
+        <div class="r-btns"></div>
+      </div>
+      <div class="confetti"></div>
     </div>
   </div>`;
-  const boxes = root.querySelectorAll('.nbox'), warn = root.querySelector('.warn'), go = root.querySelector('.go-btn');
+
+  const $ = q => root.querySelector(q);
+  const boxes = root.querySelectorAll('.nbox'), warn = $('.warn'), pad = $('.keypad');
+  const num = i => parseInt(st.vals[i], 10);
+  const pairErr = () => validate(num(0), num(1));
+
+  const drawPad = () => {
+    const keys = p.inputMode === 'expr'
+      ? ['1', '2', '3', 'del', '4', '5', '6', '+', '7', '8', '9', '=', '', '0', '', '']
+      : ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'next', '0', 'del'];
+    const label = { del: '⌫', next: '▶', '+': '+', '=': '=' };
+    pad.className = 'keypad ' + (p.inputMode === 'expr' ? 'k4' : 'k3');
+    pad.innerHTML = keys.map(k => k === '' ? '<span></span>'
+      : `<button class="key${label[k] ? ' fn' : ''}${k === 'next' ? ' nextk' : ''}" data-k="${k}" aria-label="${k === 'del' ? '지우기' : k === 'next' ? '다음 칸' : k}">${label[k] || k}</button>`).join('');
+  };
+
   const draw = () => {
     boxes.forEach((bx, i) => {
       bx.textContent = st.vals[i] || '';
-      bx.classList.toggle('on', i === st.idx);
+      bx.classList.toggle('on', i === st.idx && !st.result);
       bx.classList.toggle('fresh', i === st.idx && st.fresh && !!st.vals[i]);
     });
-    const a = parseInt(st.vals[0], 10), b = parseInt(st.vals[1], 10);
-    const err = validate(a, b);
+    const root2 = $('.expr');
+    root2.classList.toggle('shown', st.shown);
+    $('.op-plus').classList.toggle('dim', st.idx < 1 && !st.vals[1]);
+    $('.op-eq').classList.toggle('dim', !st.shown);
+    const err = st.vals[0] && st.vals[1] ? pairErr() : '';
     warn.textContent = err === 'over' ? '두 수를 더해서 100까지만 돼요' : err === 'zero' ? '0은 빼고 넣어 주세요' : '';
-    boxes.forEach(bx => bx.classList.toggle('bad', err === 'over'));
-    go.disabled = !!err;
+    boxes[0].classList.toggle('bad', err === 'over'); boxes[1].classList.toggle('bad', err === 'over');
+    $('.check-btn').disabled = !st.shown || !st.vals[2] || !!pairErr();
+    $('.solve-btn').disabled = !!pairErr();
+    const nx = pad.querySelector('[data-k="next"]');
+    if (nx) nx.disabled = st.idx === 2 || !st.vals[st.idx];
+    root.querySelectorAll('[data-pref]').forEach(sg => sg.querySelectorAll('button').forEach(bt =>
+      bt.classList.toggle('on', p[sg.dataset.pref] === bt.dataset.v)));
   };
-  root.querySelector('.expr').addEventListener('click', e => {
-    const bx = e.target.closest('.nbox'); if (!bx) return;
-    st.idx = +bx.dataset.box; st.fresh = true; draw();
-  });
-  root.querySelector('.keypad').addEventListener('click', e => {
-    const k = e.target.closest('.key'); if (!k) return;
-    const v = k.dataset.k;
-    if (v === 'rand') {
-      let a, b;
-      if (Math.random() < .4) { a = 1 + Math.floor(Math.random() * 9); b = 1 + Math.floor(Math.random() * 9); }
-      else { a = 1 + Math.floor(Math.random() * 99); b = 1 + Math.floor(Math.random() * Math.min(99, 100 - a)); if (a === 100) a = 99; }
-      st.vals = [String(a), String(b)]; st.idx = 0; st.fresh = true;
-    } else if (v === 'del') {
+
+  const shake = () => {
+    const bx = boxes[st.idx]; bx.classList.remove('nudge'); void bx.offsetWidth; bx.classList.add('nudge');
+  };
+  const clearAnswer = () => { st.vals[2] = ''; st.shown = false; };
+  // 다음 칸으로: 지금 칸이 비어 있으면 못 넘어감, 둘째 수 다음은 합이 100 이하일 때만 답 칸
+  const advance = () => {
+    if (!st.vals[st.idx]) return shake();
+    if (st.idx === 0) { st.idx = 1; st.fresh = false; return; }
+    if (st.idx === 1) {
+      if (pairErr()) return shake();
+      st.idx = 2; st.shown = true; st.fresh = false;
+    }
+  };
+
+  const onKey = v => {
+    if (v === 'next') advance();
+    else if (v === '+') { if (st.idx === 0) advance(); else shake(); }
+    else if (v === '=') { if (st.idx === 1) advance(); else shake(); }
+    else if (v === 'del') {
       const cur = st.vals[st.idx];
-      if (cur) st.vals[st.idx] = cur.slice(0, -1);
-      else if (st.idx === 1) st.idx = 0;
+      if (cur && !st.fresh) { st.vals[st.idx] = cur.slice(0, -1); if (st.idx < 2) clearAnswer(); }
+      else if (cur && st.fresh) { st.vals[st.idx] = ''; if (st.idx < 2) clearAnswer(); }
+      else if (st.idx > 0) { if (st.idx === 2) st.shown = false; st.idx--; }
       st.fresh = false;
     } else {
       let cur = st.fresh ? '' : st.vals[st.idx];
       if (cur === '0') cur = '';
-      if (cur.length >= 2) cur = '';
+      const max = st.idx < 2 ? 2 : 3;
+      if (cur.length >= max) return shake();
       cur += v;
       st.vals[st.idx] = cur; st.fresh = false;
-      if (cur.length === 2 && st.idx === 0) { st.idx = 1; st.fresh = true; }
+      if (st.idx < 2) {
+        clearAnswer();
+        if (cur.length === 2) {
+          if (st.idx === 0 || !pairErr()) advance();
+        }
+      }
     }
+  };
+
+  pad.addEventListener('click', e => {
+    const k = e.target.closest('.key'); if (!k || k.disabled) return;
+    onKey(k.dataset.k); draw();
+  });
+  $('.expr').addEventListener('click', e => {
+    const bx = e.target.closest('.nbox');
+    if (bx) { const i = +bx.dataset.box; if (i === 2 && !st.shown) return; st.idx = i; st.fresh = true; draw(); return; }
+    if (e.target.closest('.check-btn')) check();
+  });
+  $('.dice-btn').addEventListener('click', () => {
+    const [a, b] = randomPair();
+    st.vals = [String(a), String(b), '']; st.idx = 2; st.shown = true; st.fresh = false;
     draw();
   });
-  go.addEventListener('click', () => {
-    const a = parseInt(st.vals[0], 10), b = parseInt(st.vals[1], 10);
-    if (validate(a, b)) return;
-    ctx.prefs.lastA = a; ctx.prefs.lastB = b; ctx.save();
-    ctx.go(`add?a=${a}&b=${b}`);
+  const goSolve = () => {
+    if (pairErr()) return;
+    p.lastA = num(0); p.lastB = num(1); ctx.save();
+    ctx.go(`add?a=${num(0)}&b=${num(1)}`);
+  };
+  $('.solve-btn').addEventListener('click', goSolve);
+  root.querySelectorAll('[data-pref]').forEach(sg => sg.addEventListener('click', e => {
+    const bt = e.target.closest('button'); if (!bt) return;
+    p[sg.dataset.pref] = bt.dataset.v; ctx.save();
+    if (sg.dataset.pref === 'inputMode') drawPad();
+    draw();
+  }));
+
+  // ---------- 정답 확인 ----------
+  const ov = $('.result-ov'), confetti = ov.querySelector('.confetti');
+  const closeOv = () => { ov.hidden = true; ov.className = 'result-ov'; st.result = null; };
+  const check = () => {
+    if (!st.shown || !st.vals[2] || pairErr()) return;
+    const ok = num(2) === num(0) + num(1);
+    st.result = ok ? 'ok' : 'no';
+    ov.className = 'result-ov ' + (ok ? 'ok' : 'no');
+    ov.querySelector('.r-emoji').textContent = ok ? '🎉' : '😢';
+    ov.querySelector('.r-msg').textContent = ok ? '정답입니다!' : '틀렸습니다';
+    ov.querySelector('.r-btns').innerHTML = ok
+      ? '<button class="rb new">다른 문제</button><button class="rb solve">풀이 보기</button>'
+      : '<button class="rb retry">다시 풀기</button><button class="rb solve main">풀이 보기</button>';
+    ov.hidden = false;
+    confetti.innerHTML = '';
+    if (ok) burst(confetti, 40, 520);
+    draw();
+  };
+  ov.addEventListener('click', e => {
+    const bt = e.target.closest('.rb'); if (!bt) return;
+    if (bt.classList.contains('solve')) { closeOv(); goSolve(); }
+    else if (bt.classList.contains('retry')) { closeOv(); st.vals[2] = ''; st.idx = 2; st.fresh = false; draw(); }
+    else if (bt.classList.contains('new')) { closeOv(); Object.assign(st, freshInput()); draw(); }
   });
+
+  drawPad();
   draw();
+  window.__input = { st, check }; // 테스트용
+}
+
+// 색종이 터뜨리기 (덧셈 풀이·정답 확인 같이 씀)
+function burst(box, n = 26, spread = 420) {
+  box.innerHTML = '';
+  const colors = ['#FF7A8A', '#FFC93C', '#5CC8A0', '#6FA8FF', '#B78CFF'];
+  for (let i = 0; i < n; i++) {
+    const s = document.createElement('i');
+    const ang = Math.random() * Math.PI * 2, dist = spread * (.35 + Math.random() * .65);
+    s.style.setProperty('--tx', `${Math.cos(ang) * dist}px`);
+    s.style.setProperty('--ty', `${Math.sin(ang) * dist * .7}px`);
+    s.style.setProperty('--r', `${Math.random() * 540 - 270}deg`);
+    s.style.background = colors[i % colors.length];
+    s.style.animationDelay = `${Math.random() * 200}ms`;
+    box.appendChild(s);
+  }
 }
 
 function renderPlay(root, ctx, a, b) {
@@ -366,27 +498,14 @@ function renderPlay(root, ctx, a, b) {
     fMain.textContent = s ? s.formula.main : '';
     fMain.classList.remove('pop'); void fMain.offsetWidth; if (s) fMain.classList.add('pop');
     stage.classList.toggle('final', !!(s && s.final));
-    if (s && s.final && !instant) burst();
+    if (s && s.final && !instant) burstHere();
     [...dotsEl.children].forEach((d, i) => d.classList.toggle('on', i <= idx));
     root.querySelector('[data-c="prev"]').disabled = idx < 0;
     root.querySelector('[data-c="restart"]').disabled = idx < 0;
     root.querySelector('[data-c="next"]').disabled = idx >= plan.steps.length - 1;
   };
 
-  const burst = () => {
-    confetti.innerHTML = '';
-    const colors = ['#FF7A8A', '#FFC93C', '#5CC8A0', '#6FA8FF', '#B78CFF'];
-    for (let i = 0; i < 26; i++) {
-      const s = document.createElement('i');
-      const ang = Math.random() * Math.PI * 2, dist = 160 + Math.random() * 260;
-      s.style.setProperty('--tx', `${Math.cos(ang) * dist}px`);
-      s.style.setProperty('--ty', `${Math.sin(ang) * dist * .7}px`);
-      s.style.setProperty('--r', `${Math.random() * 540 - 270}deg`);
-      s.style.background = colors[i % colors.length];
-      s.style.animationDelay = `${Math.random() * 200}ms`;
-      confetti.appendChild(s);
-    }
-  };
+  const burstHere = () => burst(confetti);
 
   const go = (n, instant = false) => {
     idx = Math.max(-1, Math.min(plan.steps.length - 1, n));

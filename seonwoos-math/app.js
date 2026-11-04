@@ -1,11 +1,11 @@
 // 선우의 수학 놀이터 — 화면 전환·설정 저장
 import { renderWrite, previewSVG } from './write.js';
-import { renderAdd } from './add.js';
+import { renderAdd, resetAddInput } from './add.js';
 import { DIGITS } from './digits.js';
 
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 const KEY = 'swm-prefs';
-const DEFAULTS = { speed: 'normal', repeat: false, method: 'A', split: 'second', digitShapes: {}, lastA: 8, lastB: 7 };
+const DEFAULTS = { speed: 'normal', repeat: false, inputMode: 'next', method: 'A', split: 'second', digitShapes: {}, lastA: 8, lastB: 7 };
 
 const prefs = (() => {
   try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; }
@@ -69,6 +69,7 @@ function title() {
 }
 
 function renderHome() {
+  resetAddInput();
   root.innerHTML = `
   <div class="screen home">
     <section class="home-top">
