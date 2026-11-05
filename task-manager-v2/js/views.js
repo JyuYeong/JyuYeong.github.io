@@ -35,7 +35,7 @@ function taskRow(t, now, { showLabels = true, topicsOf = null } = {}) {
   const last = S.lastActivity(t);
   const tps = topicsOf ? S.taskTopics(doc(), t).filter(g => g.label_id === topicsOf) : [];
   return `<article class="trow${S.isFin(t) ? ' fin' : ''}" data-act="open" data-id="${t.id}"${st.ui.selectedId === t.id ? ' aria-current="true"' : ''}>
-    ${stIcon(ds)}<span class="tt">${esc(t.title)}</span>
+    ${stIcon(S.iconStatus(t, now))}<span class="tt">${esc(t.title)}</span>
     ${tps.length ? `<span class="tps">${tps.map(g => `<span class="tpg${g.archived ? ' arch' : ''}" title="주제: ${esc(g.name)}">${ic('tag')}${esc(g.name)}</span>`).join('')}</span>` : ''}
     ${reviewBadge(t, now.date)}
     ${showLabels ? `<span class="tl3">${ls.map(dot).join('')}</span>` : ''}

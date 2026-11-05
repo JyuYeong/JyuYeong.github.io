@@ -1003,5 +1003,6 @@ html:has(body.dm-sheet.sheet-open),body.dm-sheet.sheet-open{overscroll-behavior-
 .rvrow .pl{margin:0}
 .rvrow .inwrap{flex:1 1 150px;max-width:220px}
 .rvq{display:flex;gap:4px}
-.rvbtns{display:flex;gap:8px}
-.rvbtns .btn .ic{width:15px;height:15px}
+.badge.rv.ps{color:var(--ink2);background:var(--soft)}
+.seg.rvk{background:var(--surface)}
+.seg.rvk button[aria-pressed="true"]{background:var(--st-review);color:var(--on-accent)}

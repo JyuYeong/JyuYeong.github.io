@@ -50,6 +50,7 @@ export function stIcon(s) {
     done: base(c('done'), c('done')) + `<path d="M7.8 12.4l3 3 5.4-5.8" fill="none" style="stroke:${c('on')}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`,
     canceled: base(c('cancel'), c('cancel')) + `<path d="M9 9l6 6M15 9l-6 6" style="stroke:${c('on')}" stroke-width="2.2" stroke-linecap="round"/>`,
     review: `<circle cx="12" cy="12" r="9" style="fill:var(--surface);stroke:${c('review')}" stroke-width="2" stroke-dasharray="3.3 2.35"/><path d="M7.8 12.4l3 3 5.4-5.8" fill="none" style="stroke:${c('review')}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>`,
+    paused: `<circle cx="12" cy="12" r="9" style="fill:var(--surface);stroke:${c('review')}" stroke-width="2" stroke-dasharray="3.3 2.35"/><path d="M9.6 8.4v7.2M14.4 8.4v7.2" style="stroke:${c('review')}" stroke-width="2.4" stroke-linecap="round"/>`,
     delayed: base(c('late')) + `<path d="M12 7.5v5" style="stroke:${c('late')}" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="16.3" r="1.4" style="fill:${c('late')}"/>`,
   }[s];
   return `<svg class="st" viewBox="0 0 24 24" aria-hidden="true">${body}</svg>`;

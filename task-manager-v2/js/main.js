@@ -76,8 +76,8 @@ function setStatus(t, v) {
   t.status = v;
   t.completed_at = v === 'done' ? now() : null;
   // 확인 대기로 들어갈 때 판단일 기본 1주 뒤(지울 수 있음), 나가면 판단일을 지운다
-  if (v === 'review' && was !== 'review') t.review_on = S.addDays(S.todayKST(), REVIEW_DAYS);
-  if (v !== 'review') t.review_on = null;
+  if (v === 'review' && was !== 'review') { t.review_on = S.addDays(S.todayKST(), REVIEW_DAYS); t.review_kind = 'confirm'; }
+  if (v !== 'review') { t.review_on = null; t.review_kind = null; }
   touch(t);
   if (st.ui.selectedId === t.id) renderPanel();
   else if (v === 'review' && was !== 'review') toast(`확인 대기 · ${+t.review_on.slice(5, 7)}/${+t.review_on.slice(8)}에 다시 판단`, { act: 'open', id: t.id, label: '판단일 바꾸기' });
@@ -200,8 +200,7 @@ document.addEventListener('click', async e => {
     case 'clear-blocker': if (cur) { cur.blocked_by = null; touch(cur); renderPanel(); } break;
     case 'rv-in': if (cur && S.isReview(cur)) { cur.review_on = S.addDays(S.todayKST(), +el.dataset.n); touch(cur); renderPanel(); } break;
     case 'clear-review_on': if (cur) { cur.review_on = null; touch(cur); renderPanel(); } break;
-    case 'rv-done': if (cur) { setStatus(cur, 'done'); toast('완료로 확정했습니다'); } break;
-    case 'rv-back': if (cur) { setStatus(cur, 'in_progress'); toast('진행 중으로 되돌렸습니다'); } break;
+    case 'set-rvkind': if (cur && S.isReview(cur)) { cur.review_kind = el.dataset.v === 'paused' ? 'paused' : 'confirm'; touch(cur); renderPanel(`[data-act="set-rvkind"][data-v="${cur.review_kind}"]`); } break;
     case 'clear-start_date': case 'clear-due_date': {
       if (!cur) break;
       const f = act.slice(6);

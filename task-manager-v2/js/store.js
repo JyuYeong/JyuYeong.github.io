@@ -40,6 +40,10 @@ export function rangeDays(from, to) {
 export const isFin = t => t.status === 'done' || t.status === 'canceled';
 // 확인 대기 (V7.3): 할 일은 끝났지만 완료로 확정하기 전. 판단일(review_on, 선택)이 되면 "판단할 때"로 목록 맨 위에 올라온다
 export const isReview = t => t.status === 'review';
+// 확인 대기의 성질: 'confirm'(완료 확인 대기, 기본) | 'paused'(일시 정지 중: 붕 떠 있지만 취소하기도 애매한 건)
+export const reviewKind = t => (t.review_kind === 'paused' ? 'paused' : 'confirm');
+// 아이콘·표시용 상태: 확인 대기 중 일시 정지는 'paused'
+export const iconStatus = (t, now) => { const ds = displayStatus(t, now); return ds === 'review' && reviewKind(t) === 'paused' ? 'paused' : ds; };
 export const reviewDue = (t, today = todayKST()) => isReview(t) && !!t.review_on && t.review_on <= today;
 // 목록 순서 층: 판단할 때 → 진행 중·대기 → 확인 대기 → 완료·취소
 export const statusTier = (t, today = todayKST()) => (isFin(t) ? 3 : isReview(t) ? (reviewDue(t, today) ? 0 : 2) : 1);
@@ -169,7 +173,7 @@ export function createTask(doc, fields = {}) {
     label_ids: [], topic_ids: [],
     status: 'todo', urgency: 'medium',
     start_date: todayKST(), due_date: null, due_time: null,
-    blocked_by: null, review_on: null,
+    blocked_by: null, review_on: null, review_kind: null,
     day_check: false, marked_days: [],
     milestones: [], // V5.6: [{ id, name, done: 'YYYY-MM-DD'|null, added, log_id }]
     due_history: [], // V5.8: 마감 변경 이력 [{ at, from, to }]

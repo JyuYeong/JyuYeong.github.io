@@ -151,10 +151,12 @@ function datesHtml(t, now) {
 const successorsOf = t => liveTasks().filter(s => s.blocked_by === t.id);
 // 확인 대기 배지: 판단일이 되면 "판단할 때"(강조), 그 전엔 "판단 M/D"
 export function reviewBadge(t, today) {
-  if (!S.isReview(t) || !t.review_on) return '';
-  return S.reviewDue(t, today)
-    ? `<span class="badge rv due" title="판단일 ${md(t.review_on)}: 완료로 확정하거나 진행 중으로 되돌리세요">판단할 때${t.review_on < today ? ` · +${S.dayDiff(t.review_on, today)}일` : ''}</span>`
-    : `<span class="badge rv" title="확인 대기 · ${md(t.review_on)}에 다시 판단">판단 ${md(t.review_on)}</span>`;
+  if (!S.isReview(t)) return '';
+  const p = S.reviewKind(t) === 'paused';
+  if (!t.review_on) return p ? '<span class="badge rv ps">일시 정지</span>' : '';
+  if (S.reviewDue(t, today)) return `<span class="badge rv due" title="판단일 ${md(t.review_on)}: 상태를 정하세요">${p ? '다시 볼 때' : '판단할 때'}${t.review_on < today ? ` · +${S.dayDiff(t.review_on, today)}일` : ''}</span>`;
+  return p ? `<span class="badge rv ps" title="일시 정지 중 · ${md(t.review_on)}에 다시 보기">일시 정지 · ${md(t.review_on)}</span>`
+    : `<span class="badge rv" title="완료 확인 대기 · ${md(t.review_on)}에 다시 판단">판단 ${md(t.review_on)}</span>`;
 }
 function depBadges(t) {
   if (S.isFin(t)) return '';
@@ -227,7 +229,7 @@ function activeSectionHtml(items, now) {
 function cardHtml(t, now) {
   const ds = S.displayStatus(t, now);
   return `<article class="card${S.isFin(t) ? ' fin' : ''}${S.isReview(t) ? ' rv' : ''}" data-act="open" data-id="${t.id}"${st.ui.selectedId === t.id ? ' aria-current="true"' : ''}>
-    <button class="chk" data-act="menu-status" data-id="${t.id}" aria-label="상태: ${STATUS_LABEL[ds]}, 변경하려면 선택" aria-haspopup="menu">${stIcon(ds)}</button>
+    <button class="chk" data-act="menu-status" data-id="${t.id}" aria-label="상태: ${STATUS_LABEL[ds]}${S.isReview(t) && S.reviewKind(t) === 'paused' ? ' (일시 정지 중)' : ''}, 변경하려면 선택" aria-haspopup="menu">${stIcon(S.iconStatus(t, now))}</button>
     <div class="body">
       <div class="row1"><div class="title">${esc(t.title)}</div><button class="idbtn" data-act="copy-id" data-id="${t.id}" aria-label="Task ID ${t.id} 복사">${t.id}</button></div>
       <div class="meta">${labelTags(t)}${topicTags(t)}<span class="badge u-${t.urgency}">${URG_LABEL[t.urgency]}</span>${reviewBadge(t, now.date)}${depBadges(t)}</div>
@@ -356,7 +358,7 @@ function panelHtml(t) {
   const gm = S.taskTopics(doc(), t).filter(g => g.memo);
   const sm = S.dayCheckSummary(t, now.date);
   return `<div class="sgrip" aria-hidden="true"></div><div class="ph">
-      <button class="chk" data-act="menu-status" data-id="${t.id}" aria-label="상태: ${STATUS_LABEL[ds]}, 변경하려면 선택" aria-haspopup="menu">${stIcon(ds)}</button>
+      <button class="chk" data-act="menu-status" data-id="${t.id}" aria-label="상태: ${STATUS_LABEL[ds]}${S.isReview(t) && S.reviewKind(t) === 'paused' ? ' (일시 정지 중)' : ''}, 변경하려면 선택" aria-haspopup="menu">${stIcon(S.iconStatus(t, now))}</button>
       <button class="idbtn" data-act="copy-id" data-id="${t.id}" aria-label="Task ID ${t.id} 복사">${ic('copy', 'width:13px;height:13px')}${t.id}</button>
       <span class="saved">${ic('check')}자동 저장</span>
       <button class="icbtn" data-act="close-panel" aria-label="편집 닫기">${ic('x')}</button></div>
@@ -396,17 +398,21 @@ function panelHtml(t) {
   </div>
   <div class="pf">${dueHistHtml(t)}<p class="tsfoot" id="tsFoot">${tsFootHtml(t)}</p><button class="del" data-act="delete" data-id="${t.id}">${ic('trash')}삭제</button><button class="btn sm primary addlog" data-act="log-new">${ic('plus')}이력</button></div>`;
 }
-// 확인 대기 상자: 판단일(선택) + 빠른 날짜 + 완료 확정 / 진행 중으로
+// 확인 대기 상자: 성질(완료 확인 대기 / 일시 정지 중) + 판단일(선택)
 function reviewBoxHtml(t, now) {
-  const d = t.review_on, due = S.reviewDue(t, now.date);
-  const msg = !d ? '판단일 없이 확인 대기 중입니다. 마감이 지나도 지연으로 표시되지 않습니다.'
-    : due ? `판단일(${md(d)})이 되었습니다. 완료로 확정하거나 진행 중으로 되돌리세요.`
-    : `${md(d)}(D-${S.dayDiff(now.date, d)})에 다시 판단합니다. 그 전까지는 목록 아래쪽에 두고, 마감이 지나도 지연으로 표시하지 않습니다.`;
+  const d = t.review_on, due = S.reviewDue(t, now.date), p = S.reviewKind(t) === 'paused';
+  const msg = p
+    ? (!d ? '진행이 멈춘 Task입니다. 다시 볼 날을 정해 두면 그날 목록 맨 위로 올라옵니다.'
+      : due ? `다시 볼 날(${md(d)})이 되었습니다. 진행 중으로 되돌리거나 취소·완료할지 정하세요.`
+      : `${md(d)}(D-${S.dayDiff(now.date, d)})에 다시 봅니다. 그 전까지는 목록 아래쪽에 두고 지연으로 표시하지 않습니다.`)
+    : (!d ? '할 일은 끝났고 완료 확정을 기다리는 중입니다. 마감이 지나도 지연으로 표시되지 않습니다.'
+      : due ? `판단일(${md(d)})이 되었습니다. 완료로 확정하거나 진행 중으로 되돌리세요.`
+      : `${md(d)}(D-${S.dayDiff(now.date, d)})에 완료 여부를 판단합니다. 그 전까지는 목록 아래쪽에 두고 지연으로 표시하지 않습니다.`);
   return `<div class="rvbox${due ? ' due' : ''}">
-    <div class="rvrow"><label class="pl" for="f-review_on">판단일</label><div class="inwrap"><input class="in xs" type="date" id="f-review_on" data-f="review_on" value="${d || ''}"><button type="button" class="clr" data-act="clear-review_on" aria-label="판단일 지우기">${ic('x')}</button></div>
+    ${seg('rvkind', [['confirm', '완료 확인 대기'], ['paused', '일시 정지 중']], S.reviewKind(t), 'xs rvk')}
+    <div class="rvrow"><label class="pl" for="f-review_on">${p ? '다시 볼 날' : '판단일'}</label><div class="inwrap"><input class="in xs" type="date" id="f-review_on" data-f="review_on" value="${d || ''}"><button type="button" class="clr" data-act="clear-review_on" aria-label="날짜 지우기">${ic('x')}</button></div>
       <div class="rvq">${[[3, '+3일'], [7, '+1주'], [14, '+2주']].map(([n, l]) => `<button type="button" class="btn xs" data-act="rv-in" data-n="${n}">${l}</button>`).join('')}</div></div>
     <p class="note">${msg}</p>
-    <div class="rvbtns"><button type="button" class="btn sm primary" data-act="rv-done">${ic('check')}완료로 확정</button><button type="button" class="btn sm" data-act="rv-back">진행 중으로</button></div>
   </div>`;
 }
 export function growArea(el) { if (!el) return; el.style.height = 'auto'; el.style.height = el.scrollHeight + 2 + 'px'; }
