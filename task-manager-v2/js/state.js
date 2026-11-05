@@ -15,7 +15,7 @@ export const DEFAULT_Q = { text: '', statuses: [], urgencies: [], labels: [], la
 export const st = {
   doc: null,
   logs: null, // 작업 이력 문서 { schema: 'tm2-logs', logs: [] }
-  ui: { filter: 'all', selectedId: null, viewsOpen: true, railOpen: false, activeOpen: true, showActive: true, propsOpen: true, calOpen: false, page: { kind: 'today', id: null }, detailMode: 'auto', panelW: 0 },
+  ui: { filter: 'all', selectedId: null, viewsOpen: true, railOpen: false, activeOpen: true, showActive: true, propsOpen: true, calOpen: false, page: { kind: 'today', id: null }, detailMode: 'auto', panelW: 0, labelMode: 'group' },
   q: { ...DEFAULT_Q },
 };
 
@@ -28,11 +28,12 @@ export function loadPrefs() {
     for (const k of ['viewsOpen', 'activeOpen', 'showActive', 'propsOpen', 'calOpen']) if (typeof p[k] === 'boolean') st.ui[k] = p[k];
     if (['auto', 'center', 'side'].includes(p.detailMode)) st.ui.detailMode = p.detailMode;
     if (Number.isFinite(p.panelW)) st.ui.panelW = p.panelW;
+    if (['group', 'all'].includes(p.labelMode)) st.ui.labelMode = p.labelMode;
   } catch { /* 무시 */ }
 }
 export function savePrefs() {
-  const { viewsOpen, activeOpen, showActive, propsOpen, calOpen, detailMode, panelW } = st.ui;
-  try { localStorage.setItem(PREF_KEY, JSON.stringify({ q: st.q, viewsOpen, activeOpen, showActive, propsOpen, calOpen, detailMode, panelW })); } catch { /* 무시 */ }
+  const { viewsOpen, activeOpen, showActive, propsOpen, calOpen, detailMode, panelW, labelMode } = st.ui;
+  try { localStorage.setItem(PREF_KEY, JSON.stringify({ q: st.q, viewsOpen, activeOpen, showActive, propsOpen, calOpen, detailMode, panelW, labelMode })); } catch { /* 무시 */ }
 }
 
 let saveTimer;

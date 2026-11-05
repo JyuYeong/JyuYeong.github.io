@@ -964,3 +964,20 @@ body.dm-sheet .panel{height:94dvh}
 .gate .btn.bio,.vpindlg .btn.bio{display:inline-flex;align-items:center;justify-content:center;gap:8px;margin-top:8px}
 .vpindlg .btn.bio{width:100%}
 .btn.bio .ic{width:20px;height:20px}
+
+/* 휴대폰 아래 창: 손잡이 (쓸어내려 닫기) · 새로고침 제스처 막기 */
+.sgrip{display:none}
+body.dm-sheet .sgrip{display:block;flex:none;height:18px;position:relative;touch-action:none;cursor:grab}
+body.dm-sheet .sgrip::after{content:"";position:absolute;left:50%;top:8px;width:40px;height:5px;margin-left:-20px;border-radius:3px;background:var(--line2)}
+body.dm-sheet .ph{padding-top:0;height:44px}
+body.dm-sheet .pb{overscroll-behavior-y:contain}
+html:has(body.dm-sheet.sheet-open),body.dm-sheet.sheet-open{overscroll-behavior-y:none}
+
+/* 라벨 보기: 주제별 묶어 보기 / 전체 보기 */
+.lvmode{display:flex}
+.lvmode .seg button{flex:none;padding:0 14px}
+.trow .tps{display:inline-flex;gap:4px;min-width:0;flex:0 1 auto;overflow:hidden}
+.trow .tpg{display:inline-flex;align-items:center;gap:3px;max-width:140px;height:22px;padding:0 7px;border-radius:11px;background:var(--accent-weak);color:var(--accent-ink);font-size:11.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.trow .tpg .ic{width:11px;height:11px;flex:none}
+.trow .tpg.arch{opacity:.6}
+@media (max-width:480px){.trow .tps{order:3;width:100%;padding-left:28px}}

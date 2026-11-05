@@ -166,6 +166,7 @@ document.addEventListener('click', async e => {
     case 'page-dash': goPage({ kind: 'dash', id: null }); break;
     case 'label-view': e.stopPropagation(); goPage({ kind: 'label', id }); break;
     case 'topic-view': e.stopPropagation(); goPage({ kind: 'topic', id }); break;
+    case 'label-mode': st.ui.labelMode = el.dataset.v === 'all' ? 'all' : 'group'; savePrefs(); renderList(); $(`#page [data-act="label-mode"][data-v="${st.ui.labelMode}"]`)?.focus(); break;
     case 'dash-toggle': dashOpen.has(id) ? dashOpen.delete(id) : dashOpen.add(id); renderList(); $(`#page [data-act="dash-toggle"][data-id="${id}"]`)?.focus(); break;
     case 'go-list': {
       const [kind, sid] = el.dataset.scope.split(':');
@@ -575,6 +576,62 @@ $('#quick').addEventListener('submit', e => {
   if (p.kind === 'list') $('#list').scrollTop = 0;
   else toast(`“${t.title}” 추가됨`, { act: 'open', id: t.id, label: '열기' });
 });
+
+// ---------- 휴대폰 아래 창: 쓸어내려 닫기 ----------
+// 손잡이·머리줄은 어디서든, 본문은 맨 위까지 올라가 있을 때만 아래로 끌면 창이 따라 내려온다.
+// 충분히 내리거나(높이의 25% 또는 140px) 빠르게 튕기면 닫고, 아니면 제자리로. 끄는 동안은 새로고침 제스처를 막는다
+(() => {
+  const panel = $('#panel'), bd = $('#backdrop');
+  const NO_DRAG = 'input,textarea,select,[contenteditable="true"],.mslist.editing';
+  let g = null;
+  const reset = () => { panel.style.transition = panel.style.transform = bd.style.transition = bd.style.opacity = ''; };
+  panel.addEventListener('touchstart', e => {
+    g = null;
+    if (e.touches.length !== 1 || !document.body.classList.contains('dm-sheet') || !document.body.classList.contains('sheet-open')) return;
+    const tgt = e.target, pb = panel.querySelector('.pb');
+    const head = !!tgt.closest('.sgrip,.ph');
+    if (!head) {
+      if (!pb || !pb.contains(tgt) || pb.scrollTop > 0 || tgt.closest(NO_DRAG)) return;
+    }
+    const p = e.touches[0];
+    g = { x: p.clientX, y: p.clientY, t: e.timeStamp, on: false, dy: 0, head, pb, lastY: p.clientY, lastT: e.timeStamp, v: 0 };
+  }, { passive: true });
+  panel.addEventListener('touchmove', e => {
+    if (!g) return;
+    const p = e.touches[0], dx = p.clientX - g.x, dy = p.clientY - g.y;
+    if (!g.on) {
+      if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) { g = null; return; }
+      if (dy < -6) { g = null; return; }            // 위로 밀면 평소처럼 스크롤
+      if (dy < 8) return;
+      if (!g.head && g.pb.scrollTop > 0) { g = null; return; }
+      g.on = true; g.y0 = p.clientY;
+      panel.style.transition = 'none'; bd.style.transition = 'none';
+    }
+    e.preventDefault();
+    g.dy = Math.max(0, p.clientY - g.y0);
+    const dt = e.timeStamp - g.lastT;
+    if (dt > 0) { g.v = (p.clientY - g.lastY) / dt; g.lastY = p.clientY; g.lastT = e.timeStamp; }
+    panel.style.transform = `translateY(${g.dy}px)`;
+    bd.style.opacity = String(Math.max(0.15, 1 - g.dy / panel.offsetHeight));
+  }, { passive: false });
+  const end = () => {
+    if (!g) return;
+    const { on, dy, v } = g; g = null;
+    if (!on) return;
+    const h = panel.offsetHeight;
+    if (dy > Math.min(140, h * 0.25) || (v > 0.6 && dy > 40)) {
+      panel.style.transition = 'transform .16s ease-in'; bd.style.transition = 'opacity .16s ease-in';
+      panel.style.transform = 'translateY(105%)'; bd.style.opacity = '0';
+      setTimeout(() => { closePanel(); reset(); }, 170);
+    } else {
+      panel.style.transition = 'transform .18s ease'; bd.style.transition = 'opacity .18s ease';
+      panel.style.transform = ''; bd.style.opacity = '';
+      setTimeout(reset, 200);
+    }
+  };
+  panel.addEventListener('touchend', end);
+  panel.addEventListener('touchcancel', end);
+})();
 
 // ---------- 오른쪽 패널 폭 조절 (마우스·터치 드래그, 두 번 누르면 기본 폭) ----------
 const grip = $('#pgrip');

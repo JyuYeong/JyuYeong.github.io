@@ -26,13 +26,15 @@ function statChips(c, scope) {
   return `<div class="stchips">${BUCKETS.map(([k, l]) => `<button type="button" class="stc ${k}" data-act="go-list" data-scope="${esc(scope)}" data-st="${k}"${c[k] ? '' : ' disabled'}><b>${c[k]}</b>${l}</button>`).join('')}</div>`;
 }
 // 작은 Task 줄: 상태 아이콘, 제목, 라벨 점, 마감, 날짜별 체크 요약
-function taskRow(t, now, { showLabels = true } = {}) {
+function taskRow(t, now, { showLabels = true, topicsOf = null } = {}) {
   const ds = S.displayStatus(t, now);
   const ls = S.taskLabels(doc(), t);
   const sm = S.dayCheckOn(t) && !S.isFin(t) ? S.dayCheckSummary(t, now.date) : null;
   const last = S.lastActivity(t);
+  const tps = topicsOf ? S.taskTopics(doc(), t).filter(g => g.label_id === topicsOf) : [];
   return `<article class="trow${S.isFin(t) ? ' fin' : ''}" data-act="open" data-id="${t.id}"${st.ui.selectedId === t.id ? ' aria-current="true"' : ''}>
     ${stIcon(ds)}<span class="tt">${esc(t.title)}</span>
+    ${tps.length ? `<span class="tps">${tps.map(g => `<span class="tpg${g.archived ? ' arch' : ''}" title="주제: ${esc(g.name)}">${ic('tag')}${esc(g.name)}</span>`).join('')}</span>` : ''}
     ${showLabels ? `<span class="tl3">${ls.map(dot).join('')}</span>` : ''}
     <span class="tm">${t.due_date ? `<span class="${ds === 'delayed' ? 'late' : ''}">마감 ${md(t.due_date)}</span>` : ''}${sm ? `<span class="${sm.warn ? 'warn' : ''}">${esc(sm.text)}</span>` : last && !S.isFin(t) ? `<span>최근 ${md(last)}</span>` : ''}</span>
   </article>`;
@@ -121,11 +123,18 @@ function labelHtml(id) {
   }).join('');
   const loose = l ? tasks.filter(t => !S.taskTopics(doc(), t).some(g => g.label_id === l.id)) : tasks;
   const name = l ? `${dot(l)}${esc(l.name)}` : `${dot(null)}미분류`;
+  // 주제별 묶어 보기 / 전체 보기 (이 기기 설정). 주제가 있는 라벨에서만 고를 수 있다
+  const canMode = !!l && topics.some(g => !g.archived || tasksOfTopic(g).length);
+  const showAll = canMode && st.ui.labelMode === 'all';
+  const modeBar = canMode ? `<div class="lvmode"><div class="seg xs" role="group" aria-label="Task 보기 방식">${[['group', '주제별 묶어 보기'], ['all', '전체 보기']].map(([v, t]) => `<button type="button" data-act="label-mode" data-v="${v}" aria-pressed="${(showAll ? 'all' : 'group') === v}">${t}</button>`).join('')}</div></div>` : '';
   return `${head(name, { act: 'page-dash', label: '대시보드로' }, `<button type="button" class="btn xs" data-act="go-list" data-scope="label:${id}" data-st="all">목록으로</button>`)}
     ${l?.memo ? `<p class="pgmemo">${esc(l.memo)}</p>` : ''}
     ${statChips(c, 'label:' + id)}
-    ${l ? `<section class="pgs"><h3>주제 <span class="n">${topics.filter(g => !g.archived).length}</span></h3>${topicRows || '<p class="hint">주제가 없습니다. 라벨·주제 관리에서 추가할 수 있습니다.</p>'}</section>` : ''}
-    <section class="pgs"><h3>${l ? '주제 없는 Task' : 'Task'} <span class="n">${loose.length}</span></h3>${loose.length ? `<div class="trows">${loose.map(t => taskRow(t, now, { showLabels: false })).join('')}</div>` : '<p class="hint">없습니다.</p>'}</section>
+    ${modeBar}
+    ${showAll
+      ? `<section class="pgs"><h3>Task <span class="n">${tasks.length}</span></h3>${tasks.length ? `<div class="trows">${tasks.map(t => taskRow(t, now, { showLabels: false, topicsOf: l.id })).join('')}</div>` : '<p class="hint">이 라벨에 연결된 Task가 없습니다.</p>'}</section>`
+      : `${l ? `<section class="pgs"><h3>주제 <span class="n">${topics.filter(g => !g.archived).length}</span></h3>${topicRows || '<p class="hint">주제가 없습니다. 라벨·주제 관리에서 추가할 수 있습니다.</p>'}</section>` : ''}
+    <section class="pgs"><h3>${l ? '주제 없는 Task' : 'Task'} <span class="n">${loose.length}</span></h3>${loose.length ? `<div class="trows">${loose.map(t => taskRow(t, now, { showLabels: false })).join('')}</div>` : '<p class="hint">없습니다.</p>'}</section>`}
     ${l ? vaultLabelSection(l.id) : ''}
     <section class="pgs">${l ? logHead('최근 이력', `data-label="${l.id}"`) : '<h3>최근 이력</h3>'}${logsFeed(tasks, 15, l ? { labelIds: [l.id], topicIds: topics.map(g => g.id) } : {})}</section>`;
 }

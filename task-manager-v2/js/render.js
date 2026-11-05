@@ -347,7 +347,7 @@ function panelHtml(t) {
   const date = (f, label, val) => `<div class="pc"><label class="pl" for="f-${f}">${label}</label><div class="inwrap"><input class="in xs" type="date" id="f-${f}" data-f="${f}" value="${val || ''}"><button type="button" class="clr" data-act="clear-${f}" aria-label="${label} 지우기">${ic('x')}</button></div></div>`;
   const gm = S.taskTopics(doc(), t).filter(g => g.memo);
   const sm = S.dayCheckSummary(t, now.date);
-  return `<div class="ph">
+  return `<div class="sgrip" aria-hidden="true"></div><div class="ph">
       <button class="chk" data-act="menu-status" data-id="${t.id}" aria-label="상태: ${STATUS_LABEL[ds]}, 변경하려면 선택" aria-haspopup="menu">${stIcon(ds)}</button>
       <button class="idbtn" data-act="copy-id" data-id="${t.id}" aria-label="Task ID ${t.id} 복사">${ic('copy', 'width:13px;height:13px')}${t.id}</button>
       <span class="saved">${ic('check')}자동 저장</span>
