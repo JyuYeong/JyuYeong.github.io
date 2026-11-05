@@ -70,11 +70,17 @@ function updateTickerRow(k) {
 }
 
 // ---------- Task 변경 ----------
+const REVIEW_DAYS = 7;
 function setStatus(t, v) {
+  const was = t.status;
   t.status = v;
   t.completed_at = v === 'done' ? now() : null;
+  // 확인 대기로 들어갈 때 판단일 기본 1주 뒤(지울 수 있음), 나가면 판단일을 지운다
+  if (v === 'review' && was !== 'review') t.review_on = S.addDays(S.todayKST(), REVIEW_DAYS);
+  if (v !== 'review') t.review_on = null;
   touch(t);
   if (st.ui.selectedId === t.id) renderPanel();
+  else if (v === 'review' && was !== 'review') toast(`확인 대기 · ${+t.review_on.slice(5, 7)}/${+t.review_on.slice(8)}에 다시 판단`, { act: 'open', id: t.id, label: '판단일 바꾸기' });
 }
 // 이력이 있는 날은 점을 지울 수 없고, 누르면 해당 이력으로 이동한다
 function openLogsAt(t, date) {
@@ -185,13 +191,17 @@ document.addEventListener('click', async e => {
     case 'copy-id': e.stopPropagation(); toast((await copyText(id)) ? `${id} 복사됨` : `복사 실패: ${id}`); break;
 
     // 상태·속성
-    case 'menu-status': if (t) openMenu(el, ['todo', 'in_progress', 'done', 'canceled'].map(v => ({ label: STATUS_LABEL[v], icon: stIcon(v), cur: t.status === v, onPick: () => setStatus(t, v) }))); break;
+    case 'menu-status': if (t) openMenu(el, ['todo', 'in_progress', 'review', 'done', 'canceled'].map(v => ({ label: STATUS_LABEL[v], icon: stIcon(v), cur: t.status === v, onPick: () => setStatus(t, v) }))); break;
     case 'set-status': if (cur) setStatus(cur, el.dataset.v); break;
     case 'set-urgency': if (cur) { cur.urgency = el.dataset.v; touch(cur); renderPanel(); } break;
     case 'menu-labels': if (cur) labelPicker(el, cur); break;
     case 'menu-topics': if (cur) topicPicker(el, cur); break;
     case 'menu-blocker': if (cur) blockerPicker(el, cur); break;
     case 'clear-blocker': if (cur) { cur.blocked_by = null; touch(cur); renderPanel(); } break;
+    case 'rv-in': if (cur && S.isReview(cur)) { cur.review_on = S.addDays(S.todayKST(), +el.dataset.n); touch(cur); renderPanel(); } break;
+    case 'clear-review_on': if (cur) { cur.review_on = null; touch(cur); renderPanel(); } break;
+    case 'rv-done': if (cur) { setStatus(cur, 'done'); toast('완료로 확정했습니다'); } break;
+    case 'rv-back': if (cur) { setStatus(cur, 'in_progress'); toast('진행 중으로 되돌렸습니다'); } break;
     case 'clear-start_date': case 'clear-due_date': {
       if (!cur) break;
       const f = act.slice(6);
@@ -369,7 +379,7 @@ document.addEventListener('click', async e => {
     case 'log-new-for': openComposer({ labelIds: el.dataset.label ? [el.dataset.label] : [], topicIds: el.dataset.topic ? [el.dataset.topic] : [] }); break;
     case 'feed-log-menu': { const l = S.logById(st.logs, id); if (l) feedLogMenu(el, l); break; }
     case 'feed-more': feedMore(); renderList(); break;
-    case 'md-h': case 'md-b': case 'md-li': case 'md-cb': case 'md-code': mdFormat(act.slice(3)); break;
+    case 'md-h': case 'md-b': case 'md-li': case 'md-ol': case 'md-q': case 'md-cb': case 'md-code': mdFormat(act.slice(3)); break;
     case 'md-preview': togglePreview(el); break;
     case 'lg-kind': setKind(el.dataset.v); break;
     case 'tl-filter': tl.filter = el.dataset.v; renderPanel('[data-act="tl-filter"][aria-pressed="true"]'); break;
@@ -420,6 +430,7 @@ document.addEventListener('change', e => {
     if (f === 'due_date' && !v) t.due_time = null;
     if (f === 'due_date') S.noteDueChange(t, pd, pt);
     touch(t); renderPanel();
+  } else if (f === 'review_on') { t.review_on = v || null; touch(t); renderPanel();
   } else if (f === 'due_time') { t.due_time = v || null; S.noteDueChange(t, pd, pt); touch(t); renderPanel(); }
 });
 

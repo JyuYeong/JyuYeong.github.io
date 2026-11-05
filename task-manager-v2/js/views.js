@@ -7,16 +7,18 @@ import { renderMd } from './md.js';
 import { dayLabel, scopeBtns } from './logs.js';
 import { vaultPageHtml, vaultLabelSection } from './vaultui.js';
 import { renderToday } from './today.js';
+import { reviewBadge } from './render.js';
 
 const doc = () => st.doc;
-const BUCKETS = [['all', '전체'], ['todo', '대기'], ['in_progress', '진행 중'], ['delayed', '지연 중'], ['done', '완료'], ['canceled', '취소']];
+const BUCKETS = [['all', '전체'], ['todo', '대기'], ['in_progress', '진행 중'], ['delayed', '지연 중'], ['review', '확인 대기'], ['done', '완료'], ['canceled', '취소']];
 const STALE_DAYS = 7;
 const dot = l => `<span class="dot" style="background:${l ? esc(l.color) : 'var(--dot)'}"></span>`;
 const md = d => { const [y, m, dd] = d.split('-'); return `${y === S.todayKST().slice(0, 4) ? '' : y.slice(2) + '/'}${+m}/${+dd}`; };
 const tasksOfLabel = id => liveTasks().filter(t => (id === 'none' ? !S.taskLabels(doc(), t).length : t.label_ids.includes(id)));
 const tasksOfTopic = g => liveTasks().filter(t => S.taskTopics(doc(), t).some(x => x.id === g.id));
-const ORDER = ['delayed', 'in_progress', 'todo', 'done', 'canceled'];
-const byState = now => (a, b) => ORDER.indexOf(S.displayStatus(a, now)) - ORDER.indexOf(S.displayStatus(b, now)) || S.compareDefault(a, b);
+const ORDER = ['delayed', 'in_progress', 'todo', 'review', 'done', 'canceled'];
+const rank = (t, now) => (S.reviewDue(t, now.date) ? -1 : ORDER.indexOf(S.displayStatus(t, now)));
+const byState = now => (a, b) => rank(a, now) - rank(b, now) || S.compareDefault(a, b);
 
 // 숫자 칸: 누르면 그 조건으로 걸러진 목록으로 이동 (0이면 누를 수 없음)
 function countCells(c, scope) {
@@ -29,14 +31,15 @@ function statChips(c, scope) {
 function taskRow(t, now, { showLabels = true, topicsOf = null } = {}) {
   const ds = S.displayStatus(t, now);
   const ls = S.taskLabels(doc(), t);
-  const sm = S.dayCheckOn(t) && !S.isFin(t) ? S.dayCheckSummary(t, now.date) : null;
+  const sm = S.dayCheckOn(t) && !S.isFin(t) && !S.isReview(t) ? S.dayCheckSummary(t, now.date) : null;
   const last = S.lastActivity(t);
   const tps = topicsOf ? S.taskTopics(doc(), t).filter(g => g.label_id === topicsOf) : [];
   return `<article class="trow${S.isFin(t) ? ' fin' : ''}" data-act="open" data-id="${t.id}"${st.ui.selectedId === t.id ? ' aria-current="true"' : ''}>
     ${stIcon(ds)}<span class="tt">${esc(t.title)}</span>
     ${tps.length ? `<span class="tps">${tps.map(g => `<span class="tpg${g.archived ? ' arch' : ''}" title="주제: ${esc(g.name)}">${ic('tag')}${esc(g.name)}</span>`).join('')}</span>` : ''}
+    ${reviewBadge(t, now.date)}
     ${showLabels ? `<span class="tl3">${ls.map(dot).join('')}</span>` : ''}
-    <span class="tm">${t.due_date ? `<span class="${ds === 'delayed' ? 'late' : ''}">마감 ${md(t.due_date)}</span>` : ''}${sm ? `<span class="${sm.warn ? 'warn' : ''}">${esc(sm.text)}</span>` : last && !S.isFin(t) ? `<span>최근 ${md(last)}</span>` : ''}</span>
+    <span class="tm">${t.due_date ? `<span class="${ds === 'delayed' ? 'late' : ''}">마감 ${md(t.due_date)}</span>` : ''}${sm ? `<span class="${sm.warn ? 'warn' : ''}">${esc(sm.text)}</span>` : last && !S.isFin(t) && !S.isReview(t) ? `<span>최근 ${md(last)}</span>` : ''}</span>
   </article>`;
 }
 // 이력 모아 보기: Task 이력 + 라벨·주제에 직접 남긴 이력 (V5.5). "더 보기"로 늘린 개수는 화면을 옮기면 처음으로
@@ -118,7 +121,7 @@ function labelHtml(id) {
     return `<button type="button" class="grow${g.archived ? ' arch' : ''}" data-act="topic-view" data-id="${g.id}">
       <span class="gn">${ic('tag')}<b>${esc(g.name)}</b>${g.archived ? '<em>보관</em>' : ''}</span>
       ${g.memo ? `<span class="gm2">${esc(g.memo)}</span>` : ''}
-      <span class="gcs">${[['delayed', '지연'], ['in_progress', '진행'], ['todo', '대기'], ['done', '완료']].filter(([k]) => gc[k]).map(([k, lb]) => `<span class="${k}">${lb} ${gc[k]}</span>`).join('') || '<span>Task 없음</span>'}</span>
+      <span class="gcs">${[['delayed', '지연'], ['in_progress', '진행'], ['todo', '대기'], ['review', '확인 대기'], ['done', '완료']].filter(([k]) => gc[k]).map(([k, lb]) => `<span class="${k}">${lb} ${gc[k]}</span>`).join('') || '<span>Task 없음</span>'}</span>
       ${ic('chevR', '', 'go')}</button>`;
   }).join('');
   const loose = l ? tasks.filter(t => !S.taskTopics(doc(), t).some(g => g.label_id === l.id)) : tasks;

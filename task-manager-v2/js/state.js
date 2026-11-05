@@ -1,7 +1,7 @@
 // 앱 상태: 문서, 화면 상태, 필터 조건, 기기별 설정, 저장
 import * as S from './store.js';
 
-export const STATUS_LABEL = { todo: '대기', in_progress: '진행 중', delayed: '지연 중', done: '완료', canceled: '취소' };
+export const STATUS_LABEL = { todo: '대기', in_progress: '진행 중', delayed: '지연 중', review: '확인 대기', done: '완료', canceled: '취소' };
 export const URG_LABEL = { urgent: 'Urgent', high: 'High', medium: 'Medium', low: 'Low' };
 export const URG_RANK = { urgent: 0, high: 1, medium: 2, low: 3 };
 export const SORT_LABEL = { due: '마감일', start: '시작일', urgency: '긴급도', created: '생성일', title: '제목' };

@@ -6,6 +6,8 @@ import * as Vault from './vault.js';
 import { V } from './vault.js';
 import { PW_MIN, pwError, isPin } from './vcrypto.js';
 import * as Bio from './bio.js';
+import { renderMd } from './md.js';
+import { mdBarHtml } from './logs.js';
 
 const IDLE_MS = 5 * 60 * 1000;
 export const vu = { returnTo: null, tab: 'work', open: new Set(), revealed: new Set(), q: '', hl: null, gate: null, msg: '', busy: false, recovery: null, syncInfo: () => ({}) };
@@ -120,7 +122,7 @@ function memoRowHtml(m, { compact = false } = {}) {
     <div class="vmh"><button type="button" class="tt" data-act="v-reveal" data-key="${m.id}:memo" aria-expanded="${open}">${ic(open ? 'chev' : 'chevR', '', 'car')}${ic('lock', '', 'tfi')}<span class="tn">${esc(m.title)}</span></button>
       <span class="vlbs">${m.label_ids.map(labelById).filter(Boolean).map(l => `<span class="vlb own">${dot(l)}${esc(l.name)}</span>`).join('')}</span>
       ${compact ? '' : `<button type="button" class="icbtn xs" data-act="v-edit-memo" data-id="${m.id}" aria-label="${esc(m.title)} 편집">${ic('edit')}</button>`}</div>
-    ${open ? `<div class="vmb">${m.body ? esc(m.body) : '<span class="tv none">내용 없음</span>'}</div>` : ''}</div>`;
+    ${open ? `<div class="vmb md">${m.body ? renderMd(m.body) : '<span class="tv none">내용 없음</span>'}</div>` : ''}</div>`;
 }
 function searchHtml() {
   const r = Vault.searchVault(vu.q);
@@ -219,7 +221,8 @@ function memoDialog(id = null) {
   vu.memoLabels = m ? [...m.label_ids] : [];
   openDlg('vmemo', m ? '보안메모 편집' : '보안메모 추가', `<form id="vMemoForm" data-id="${id || ''}" autocomplete="off" class="vform">
     <label class="fl" for="vmTitle">제목</label><input class="in" id="vmTitle" maxlength="120" value="${esc(m?.title || '')}" required>
-    <label class="fl" for="vmBody">내용</label><textarea class="in mono" id="vmBody" rows="8" maxlength="50000" spellcheck="false">${esc(m?.body || '')}</textarea>
+    <label class="fl" for="vmBody">내용</label>${mdBarHtml()}<textarea class="in mdin" id="vmBody" rows="8" maxlength="50000" spellcheck="false" placeholder="마크다운 사용 가능 (## 제목, **굵게**, - 글머리, 1. 번호, > 인용, &#96;코드&#96;, &#96;&#96;&#96; 코드 블록)">${esc(m?.body || '')}</textarea>
+    <div class="md mdprev" hidden></div>
     <span class="fl">라벨</span><button type="button" class="pv" id="vmLabels" data-act="v-memo-labels">${memoLabelsHtml()}</button>
     <div class="btns">${m ? `<button type="button" class="btn danger" data-act="v-del-memo" data-id="${m.id}">삭제</button>` : ''}<button type="button" class="btn" data-act="close-dlg">취소</button><button type="submit" class="btn primary">저장</button></div></form>`);
   $('#vmTitle').focus();

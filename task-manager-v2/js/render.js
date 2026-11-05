@@ -60,7 +60,7 @@ function cmpBy(a, b) {
   const str = (x, y) => (x < y ? -1 : x > y ? 1 : 0);
   const dir = q.dir === 'desc' ? -1 : 1;
   let r = 0;
-  if (q.sort === 'due') return dir === 1 ? S.compareDefault(a, b) : (S.isFin(a) !== S.isFin(b) ? (S.isFin(a) ? 1 : -1) : -S.compareDefault(a, b));
+  if (q.sort === 'due') return dir === 1 ? S.compareDefault(a, b) : (S.compareTier(a, b) || -S.compareDefault(a, b));
   if (q.sort === 'start') r = (!a.start_date || !b.start_date) ? (a.start_date ? -1 : b.start_date ? 1 : 0) : str(a.start_date, b.start_date) * dir;
   else if (q.sort === 'urgency') r = (URG_RANK[a.urgency] - URG_RANK[b.urgency]) * dir;
   else if (q.sort === 'created') r = str(a.created_at, b.created_at) * dir;
@@ -89,9 +89,10 @@ function groupsOf(t, now) {
       return gs.map(g => { const l = labelOf(g.label_id); return [L.indexOf(l) * 100000 + S.topicsOfLabel(doc(), l.id, { archived: true }).indexOf(g), `${l.name} · ${g.name}`]; });
     }
     case 'urgency': return [[URG_RANK[t.urgency], URG_LABEL[t.urgency]]];
-    case 'status': { const ds = S.displayStatus(t, now); return [[['delayed', 'in_progress', 'todo', 'done', 'canceled'].indexOf(ds), STATUS_LABEL[ds]]]; }
+    case 'status': { const ds = S.displayStatus(t, now); return [[['delayed', 'in_progress', 'todo', 'review', 'done', 'canceled'].indexOf(ds), STATUS_LABEL[ds]]]; }
     case 'due': {
       if (S.isFin(t)) return [[9, '완료/취소']];
+      if (S.isReview(t)) return [S.reviewDue(t, now.date) ? [-1, '판단할 때'] : [8, '확인 대기']];
       if (!t.due_date) return [[4, '마감일 없음']];
       if (S.isDelayed(t, now)) return [[0, '지연']];
       const d = S.dayDiff(now.date, t.due_date);
@@ -136,11 +137,11 @@ function datesHtml(t, now) {
   if (t.due_date) {
     const late = S.isDelayed(t, now);
     let suffix = '';
-    if (!S.isFin(t)) {
+    if (!S.isFin(t) && !S.isReview(t)) {
       const diff = S.dayDiff(now.date, t.due_date);
       suffix = diff > 0 ? ` · D-${diff}` : diff === 0 ? (late ? ' · 시간 지남' : ' · D-Day') : ` · ${-diff}일 지연`;
     }
-    parts.push(`<span class="d${late ? ' late' : !S.isFin(t) ? ' due' : ''}">${t.due_time ? ic('clock') : ''}마감 ${md(t.due_date)}${t.due_time ? ' ' + t.due_time : ''}${suffix}</span>`);
+    parts.push(`<span class="d${late ? ' late' : !S.isFin(t) && !S.isReview(t) ? ' due' : ''}">${t.due_time ? ic('clock') : ''}마감 ${md(t.due_date)}${t.due_time ? ' ' + t.due_time : ''}${suffix}</span>`);
   }
   if (t.start_date) parts.push(`<span class="d">시작 ${md(t.start_date)}</span>`);
   const n = S.logCount(t.id);
@@ -148,6 +149,13 @@ function datesHtml(t, now) {
   return parts.length ? `<div class="dates">${parts.join('')}</div>` : '';
 }
 const successorsOf = t => liveTasks().filter(s => s.blocked_by === t.id);
+// 확인 대기 배지: 판단일이 되면 "판단할 때"(강조), 그 전엔 "판단 M/D"
+export function reviewBadge(t, today) {
+  if (!S.isReview(t) || !t.review_on) return '';
+  return S.reviewDue(t, today)
+    ? `<span class="badge rv due" title="판단일 ${md(t.review_on)}: 완료로 확정하거나 진행 중으로 되돌리세요">판단할 때${t.review_on < today ? ` · +${S.dayDiff(t.review_on, today)}일` : ''}</span>`
+    : `<span class="badge rv" title="확인 대기 · ${md(t.review_on)}에 다시 판단">판단 ${md(t.review_on)}</span>`;
+}
 function depBadges(t) {
   if (S.isFin(t)) return '';
   let h = '';
@@ -204,7 +212,7 @@ function dayCalHtml(t, now) {
 }
 function activeSectionHtml(items, now) {
   if (!st.ui.showActive) return '';
-  const list = items.filter(t => { const r = S.dcRange(t, now.date); return r && !S.isFin(t) && r.start <= now.date && now.date <= r.end; });
+  const list = items.filter(t => { const r = S.dcRange(t, now.date); return r && !S.isFin(t) && !S.isReview(t) && r.start <= now.date && now.date <= r.end; });
   if (!list.length) return '';
   list.sort((a, b) => { const x = S.lastWorked(a, now.date), y = S.lastWorked(b, now.date); return x < y ? -1 : x > y ? 1 : S.compareDefault(a, b); });
   const rows = st.ui.activeOpen ? list.map(t => {
@@ -218,11 +226,11 @@ function activeSectionHtml(items, now) {
 // ---------- 카드·목록 ----------
 function cardHtml(t, now) {
   const ds = S.displayStatus(t, now);
-  return `<article class="card${S.isFin(t) ? ' fin' : ''}" data-act="open" data-id="${t.id}"${st.ui.selectedId === t.id ? ' aria-current="true"' : ''}>
+  return `<article class="card${S.isFin(t) ? ' fin' : ''}${S.isReview(t) ? ' rv' : ''}" data-act="open" data-id="${t.id}"${st.ui.selectedId === t.id ? ' aria-current="true"' : ''}>
     <button class="chk" data-act="menu-status" data-id="${t.id}" aria-label="상태: ${STATUS_LABEL[ds]}, 변경하려면 선택" aria-haspopup="menu">${stIcon(ds)}</button>
     <div class="body">
       <div class="row1"><div class="title">${esc(t.title)}</div><button class="idbtn" data-act="copy-id" data-id="${t.id}" aria-label="Task ID ${t.id} 복사">${t.id}</button></div>
-      <div class="meta">${labelTags(t)}${topicTags(t)}<span class="badge u-${t.urgency}">${URG_LABEL[t.urgency]}</span>${depBadges(t)}</div>
+      <div class="meta">${labelTags(t)}${topicTags(t)}<span class="badge u-${t.urgency}">${URG_LABEL[t.urgency]}</span>${reviewBadge(t, now.date)}${depBadges(t)}</div>
       ${msCardHtml(t, now)}
       ${datesHtml(t, now)}
       ${dayStripHtml(t, now)}
@@ -354,8 +362,9 @@ function panelHtml(t) {
       <button class="icbtn" data-act="close-panel" aria-label="편집 닫기">${ic('x')}</button></div>
   <div class="pb">
     <textarea class="in ttl" id="f-title" data-f="title" maxlength="200" rows="1" aria-label="제목" enterkeyhint="done">${esc(t.title)}</textarea>
-    ${seg('status', [['todo', '대기'], ['in_progress', '진행 중'], ['done', '완료'], ['canceled', '취소']], t.status, 'xs')}
-    ${ds === 'delayed' ? '<p class="note">마감이 지나 “지연 중”으로 표시됩니다. 완료/취소하면 해제됩니다.</p>' : ''}
+    ${seg('status', [['todo', '대기'], ['in_progress', '진행 중'], ['review', '확인 대기'], ['done', '완료'], ['canceled', '취소']], t.status, 'xs st5')}
+    ${ds === 'delayed' ? '<p class="note">마감이 지나 “지연 중”으로 표시됩니다. 확인 대기·완료·취소로 바꾸면 해제됩니다.</p>' : ''}
+    ${S.isReview(t) ? reviewBoxHtml(t, now) : ''}
     ${seg('urgency', [['urgent', 'Urgent'], ['high', 'High'], ['medium', 'Medium'], ['low', 'Low']], t.urgency, 'xs')}
 
     <section class="psec">
@@ -386,6 +395,19 @@ function panelHtml(t) {
     <section class="psec" id="logSec">${timelineHtml(t)}</section>
   </div>
   <div class="pf">${dueHistHtml(t)}<p class="tsfoot" id="tsFoot">${tsFootHtml(t)}</p><button class="del" data-act="delete" data-id="${t.id}">${ic('trash')}삭제</button><button class="btn sm primary addlog" data-act="log-new">${ic('plus')}이력</button></div>`;
+}
+// 확인 대기 상자: 판단일(선택) + 빠른 날짜 + 완료 확정 / 진행 중으로
+function reviewBoxHtml(t, now) {
+  const d = t.review_on, due = S.reviewDue(t, now.date);
+  const msg = !d ? '판단일 없이 확인 대기 중입니다. 마감이 지나도 지연으로 표시되지 않습니다.'
+    : due ? `판단일(${md(d)})이 되었습니다. 완료로 확정하거나 진행 중으로 되돌리세요.`
+    : `${md(d)}(D-${S.dayDiff(now.date, d)})에 다시 판단합니다. 그 전까지는 목록 아래쪽에 두고, 마감이 지나도 지연으로 표시하지 않습니다.`;
+  return `<div class="rvbox${due ? ' due' : ''}">
+    <div class="rvrow"><label class="pl" for="f-review_on">판단일</label><div class="inwrap"><input class="in xs" type="date" id="f-review_on" data-f="review_on" value="${d || ''}"><button type="button" class="clr" data-act="clear-review_on" aria-label="판단일 지우기">${ic('x')}</button></div>
+      <div class="rvq">${[[3, '+3일'], [7, '+1주'], [14, '+2주']].map(([n, l]) => `<button type="button" class="btn xs" data-act="rv-in" data-n="${n}">${l}</button>`).join('')}</div></div>
+    <p class="note">${msg}</p>
+    <div class="rvbtns"><button type="button" class="btn sm primary" data-act="rv-done">${ic('check')}완료로 확정</button><button type="button" class="btn sm" data-act="rv-back">진행 중으로</button></div>
+  </div>`;
 }
 export function growArea(el) { if (!el) return; el.style.height = 'auto'; el.style.height = el.scrollHeight + 2 + 'px'; }
 export function renderPanel(focusSel) {

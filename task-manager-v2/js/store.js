@@ -38,15 +38,27 @@ export function rangeDays(from, to) {
 
 // ---------- 상태 ----------
 export const isFin = t => t.status === 'done' || t.status === 'canceled';
+// 확인 대기 (V7.3): 할 일은 끝났지만 완료로 확정하기 전. 판단일(review_on, 선택)이 되면 "판단할 때"로 목록 맨 위에 올라온다
+export const isReview = t => t.status === 'review';
+export const reviewDue = (t, today = todayKST()) => isReview(t) && !!t.review_on && t.review_on <= today;
+// 목록 순서 층: 판단할 때 → 진행 중·대기 → 확인 대기 → 완료·취소
+export const statusTier = (t, today = todayKST()) => (isFin(t) ? 3 : isReview(t) ? (reviewDue(t, today) ? 0 : 2) : 1);
+export function compareTier(a, b) {
+  const today = todayKST(), x = statusTier(a, today), y = statusTier(b, today);
+  if (x !== y) return x - y;
+  if (x === 0 || x === 2) { const p = a.review_on || '9999', q = b.review_on || '9999'; if (p !== q) return p < q ? -1 : 1; }
+  return 0;
+}
 export function isDelayed(t, now = nowKST()) {
-  if (isFin(t) || !t.due_date) return false;
+  if (isFin(t) || isReview(t) || !t.due_date) return false;
   if (t.due_date < now.date) return true;
   return t.due_date === now.date && !!t.due_time && t.due_time < now.time;
 }
 export const displayStatus = (t, now) => (isDelayed(t, now) ? 'delayed' : t.status);
 
 export function compareDefault(a, b) {
-  if (isFin(a) !== isFin(b)) return isFin(a) ? 1 : -1;
+  const tier = compareTier(a, b);
+  if (tier) return tier;
   if (a.due_date !== b.due_date) {
     if (!a.due_date) return 1;
     if (!b.due_date) return -1;
@@ -157,7 +169,7 @@ export function createTask(doc, fields = {}) {
     label_ids: [], topic_ids: [],
     status: 'todo', urgency: 'medium',
     start_date: todayKST(), due_date: null, due_time: null,
-    blocked_by: null,
+    blocked_by: null, review_on: null,
     day_check: false, marked_days: [],
     milestones: [], // V5.6: [{ id, name, done: 'YYYY-MM-DD'|null, added, log_id }]
     due_history: [], // V5.8: 마감 변경 이력 [{ at, from, to }]
@@ -252,7 +264,7 @@ export function toggleMarked(t, date) {
 export function dcRange(t, today = todayKST()) {
   if (!dayCheckOn(t)) return null;
   let end = t.due_date;
-  if (!isFin(t) && today > end) end = today;
+  if (!isFin(t) && !isReview(t) && today > end) end = today;
   if (t.status === 'done') { const c = kstDateOf(t.completed_at); if (c && c > end) end = c; }
   return { start: t.start_date, due: t.due_date, end };
 }
@@ -266,7 +278,7 @@ export function workedIn(t, from, to) {
 export function dayCheckSummary(t, today = todayKST()) {
   const r = dcRange(t, today);
   if (!r) return { text: '', warn: false };
-  if (isFin(t)) {
+  if (isFin(t) || isReview(t)) {
     const n = workedIn(t, r.start, r.end).length;
     const over = r.end > r.due ? ` · 마감 +${dayDiff(r.due, r.end)}일` : '';
     return { text: `${n}일 손댐${over}`, warn: false };
@@ -286,9 +298,9 @@ export function lastActivity(t) {
   logIdx.get(t.id)?.forEach((_, k) => { if (k > d) d = k; });
   return d;
 }
-// 상태 집계: { all, todo, in_progress, delayed, done, canceled } (지연 중은 대기·진행 중에서 빼서 따로 센다)
+// 상태 집계: { all, todo, in_progress, delayed, review, done, canceled } (지연 중은 대기·진행 중에서 빼서 따로 센다)
 export function statusCounts(tasks, now = nowKST()) {
-  const c = { all: 0, todo: 0, in_progress: 0, delayed: 0, done: 0, canceled: 0 };
+  const c = { all: 0, todo: 0, in_progress: 0, delayed: 0, review: 0, done: 0, canceled: 0 };
   for (const t of tasks) { c.all++; c[displayStatus(t, now)]++; }
   return c;
 }

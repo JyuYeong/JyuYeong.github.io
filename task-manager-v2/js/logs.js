@@ -162,9 +162,7 @@ export function openComposer(target, editId = null) {
     <div class="lgrow"><label class="fl" for="lgDate" id="lgDateLbl">${composer.kind === 'event' ? '발생일' : '작업일'}</label><input class="in xs" type="date" id="lgDate" name="work_date" max="${today}" value="${l ? l.work_date : today}" required><span class="lgnote" id="lgDateNote"></span></div>
     <div class="fsec"><span class="fl">연결 대상</span><div class="lktasks" id="lgLinked">${linkedChipsHtml()}</div>
       <input class="in xs" type="search" id="lgSearch" placeholder="라벨·주제·Task 더 연결 (기억나는 단어 아무거나)" aria-label="연결할 라벨·주제·Task 검색"><div class="lgsug" id="lgSug"></div></div>
-    <div class="mdbar" role="toolbar" aria-label="서식">
-      <button type="button" data-act="md-h" title="제목">H</button><button type="button" data-act="md-b" title="굵게"><b>B</b></button><button type="button" data-act="md-li" title="글머리">•</button><button type="button" data-act="md-cb" title="체크 항목">☐</button><button type="button" data-act="md-code" title="코드">&lt;/&gt;</button>
-      <button type="button" class="pvbtn" data-act="md-preview" aria-pressed="false">미리보기</button></div>
+    ${mdBarHtml()}
     <textarea class="in mdin" id="lgBody" name="body" rows="7" placeholder="요점만 짧게. 마크다운 사용 가능 (## 제목, **굵게**, - 글머리, - [ ] 체크)">${l ? esc(l.body) : ''}</textarea>
     <div class="md mdprev" id="lgPrev" hidden></div>
     ${l ? `<p class="hint">${esc(stampText(l))}</p>` : ''}
@@ -177,9 +175,13 @@ export function openComposer(target, editId = null) {
   ta.setSelectionRange(ta.value.length, ta.value.length);
 }
 
+// 서식 도구 막대 (작업 이력 창·보안메모 창 공용). 지금 열린 창의 textarea.mdin / .mdprev에 적용한다
+export const mdBarHtml = () => `<div class="mdbar" role="toolbar" aria-label="서식">
+      <button type="button" data-act="md-h" title="제목">H</button><button type="button" data-act="md-b" title="굵게"><b>B</b></button><button type="button" data-act="md-li" title="글머리">•</button><button type="button" data-act="md-ol" title="번호 목록">1.</button><button type="button" data-act="md-q" title="인용">❝</button><button type="button" data-act="md-cb" title="체크 항목">☐</button><button type="button" data-act="md-code" title="코드 (여러 줄을 고르면 코드 블록)">&lt;/&gt;</button>
+      <button type="button" class="pvbtn" data-act="md-preview" aria-pressed="false">미리보기</button></div>`;
 // 서식 버튼: 선택 영역을 감싸거나 줄 앞에 기호를 붙인다
 export function mdFormat(kind) {
-  const ta = $('#lgBody');
+  const ta = dlg.querySelector('textarea.mdin');
   if (!ta) return;
   const { selectionStart: a, selectionEnd: b, value: v } = ta;
   const sel = v.slice(a, b);
@@ -191,7 +193,7 @@ export function mdFormat(kind) {
     out = v.slice(0, a) + w + sel + w2 + v.slice(b);
     ca = a + w.length; cb = ca + sel.length;
   } else {
-    const prefix = { h: '## ', li: '- ', cb: '- [ ] ' }[kind];
+    const prefix = { h: '## ', li: '- ', ol: '1. ', q: '> ', cb: '- [ ] ' }[kind];
     const ls = v.lastIndexOf('\n', a - 1) + 1;
     const block = v.slice(ls, b);
     const lines = block.split('\n').map(x => (x.startsWith(prefix) ? x.slice(prefix.length) : prefix + x));
@@ -213,10 +215,12 @@ export function setKind(v) {
   refreshDateNote();
 }
 export function togglePreview(btn) {
-  composer.preview = !composer.preview;
-  const ta = $('#lgBody'), pv = $('#lgPrev');
+  const on = btn.getAttribute('aria-pressed') !== 'true';
+  if (dlg.querySelector('#logForm')) composer.preview = on;
+  const ta = dlg.querySelector('textarea.mdin'), pv = dlg.querySelector('.mdprev');
+  if (!ta || !pv) return;
   pv.innerHTML = renderMd(ta.value) || '<p class="hint">내용이 없습니다.</p>';
-  pv.hidden = !composer.preview; ta.hidden = composer.preview;
-  btn.setAttribute('aria-pressed', String(composer.preview));
-  dlg.querySelectorAll('.mdbar [data-act^="md-"]:not(.pvbtn)').forEach(b => { b.disabled = composer.preview; });
+  pv.hidden = !on; ta.hidden = on;
+  btn.setAttribute('aria-pressed', String(on));
+  dlg.querySelectorAll('.mdbar [data-act^="md-"]:not(.pvbtn)').forEach(b => { b.disabled = on; });
 }

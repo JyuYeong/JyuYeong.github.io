@@ -96,7 +96,7 @@ export function filterHtml() {
   const q = st.q;
   const views = live(doc().views);
   return `<div class="fsec"><label class="fl" for="q-text">검색 (제목·메모·ID·라벨·주제)</label><input class="in" id="q-text" type="search" value="${esc(q.text)}" maxlength="100"></div>
-  <div class="fsec"><span class="fl">상태</span><div class="chips2">${['todo', 'in_progress', 'delayed', 'done', 'canceled'].map(v => chipBtn('q-status', v, STATUS_LABEL[v], q.statuses.includes(v))).join('')}</div></div>
+  <div class="fsec"><span class="fl">상태</span><div class="chips2">${['todo', 'in_progress', 'delayed', 'review', 'done', 'canceled'].map(v => chipBtn('q-status', v, STATUS_LABEL[v], q.statuses.includes(v))).join('')}</div></div>
   <div class="fsec"><span class="fl">긴급도</span><div class="chips2">${Object.keys(URG_LABEL).map(v => chipBtn('q-urg', v, URG_LABEL[v], q.urgencies.includes(v))).join('')}</div></div>
   ${labelFilterHtml()}
   ${topicFilterHtml()}
