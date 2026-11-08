@@ -238,10 +238,15 @@ dialog[data-kind="filter"][open]{display:flex}
 .tkrow .tw{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .tkclr{height:30px;padding:0 9px;border:1px solid var(--line2);border-radius:8px;background:var(--surface);color:var(--ink2);font-size:12.5px;font-weight:600}
 .tkclr[hidden]{display:none}
-/* 대화상자 폭 기준(PC·폰 공통): 기간·매일 묶음은 한 줄씩, 입력칸이 남은 폭을 나눠 쓰고 모자라면 버튼이 다음 줄로 */
-.tkrow .r2 .tw.tw-f{flex:1 1 100%;flex-wrap:wrap;white-space:normal;min-width:0}
-.tkrow .r2 .tw-f input[type="date"].in{flex:1 1 0;min-width:118px;width:auto}
-.tkrow .r2 .tw-f input[type="time"].in{flex:1 1 0;min-width:96px;width:auto}
+/* 기간·매일 묶음: 격자로 [이름][입력][~][입력][버튼] — 입력칸은 남은 폭을 나눠 쓰고 절대 넘치지 않는다.
+   문장 칸(.tkrow) 폭이 좁으면(폰) 버튼만 다음 줄 오른쪽으로 */
+.tkrow{container-type:inline-size}
+.tkrow .r2 .tw.tw-f{flex:1 1 100%;display:grid;grid-template-columns:auto minmax(0,1fr) auto minmax(0,1fr) auto;align-items:center;gap:6px;min-width:0}
+.tkrow .r2 .tw-f input.in{width:100%;min-width:0}
+@container (max-width:400px){
+  .tkrow .r2 .tw.tw-f{grid-template-columns:auto minmax(0,1fr) auto minmax(0,1fr)}
+  .tkrow .r2 .tw-f .tkclr{grid-column:2 / -1;justify-self:end}
+}
 .tkst{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:6px;font-size:12px;font-weight:600;background:var(--soft);color:var(--muted);margin-left:auto}
 .tkst.on{background:var(--accent-weak);color:var(--accent-ink)}
 .tkst.exp{background:var(--u-urgent-bg);color:var(--u-urgent)}
@@ -561,6 +566,7 @@ select.in{appearance:auto}
 
 /* 입력 시트 */
 dialog[data-kind="log"]{width:min(560px,calc(100vw - 24px))}
+dialog[data-kind="ticker"]{width:min(660px,calc(100vw - 24px))} /* 티커: 문장마다 기간·시간대 입력칸이 있어 기본(440px)보다 넓게 */
 @media (max-width:699px){
   dialog[data-kind="log"]{margin:auto 0 0;width:100%;max-width:none;border-radius:20px 20px 0 0;max-height:94dvh}
 }
