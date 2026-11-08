@@ -236,6 +236,13 @@ dialog[data-kind="filter"][open]{display:flex}
 .tkrow .r2 input[type="date"].in{width:150px}
 .tkrow .r2 input[type="time"].in{width:108px}
 .tkrow .tw{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.tkclr{height:30px;padding:0 9px;border:1px solid var(--line2);border-radius:8px;background:var(--surface);color:var(--ink2);font-size:12.5px;font-weight:600}
+.tkclr[hidden]{display:none}
+@media (max-width:600px){
+  .tkrow .tw{flex:1 1 100%;flex-wrap:wrap}
+  .tkrow .r2 input[type="date"].in{flex:1 1 0;min-width:118px;width:auto}
+  .tkrow .r2 input[type="time"].in{flex:1 1 0;min-width:96px;width:auto}
+}
 .tkst{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:6px;font-size:12px;font-weight:600;background:var(--soft);color:var(--muted);margin-left:auto}
 .tkst.on{background:var(--accent-weak);color:var(--accent-ink)}
 .tkst.exp{background:var(--u-urgent-bg);color:var(--u-urgent)}

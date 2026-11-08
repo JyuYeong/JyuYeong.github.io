@@ -67,6 +67,8 @@ function updateTickerRow(k) {
   s.textContent = lbl; s.className = `tkst ${cls}`;
   row.classList.toggle('off', !k.enabled);
   row.querySelector('[data-act="tk-toggle"]').setAttribute('aria-checked', String(k.enabled));
+  row.querySelector('[data-act="tk-clear"][data-v="date"]').hidden = !(k.start_date || k.expire_date);
+  row.querySelector('[data-act="tk-clear"][data-v="daily"]').hidden = !(k.daily_from || k.daily_to);
 }
 
 // ---------- Task 변경 ----------
@@ -335,6 +337,15 @@ document.addEventListener('click', async e => {
       k.level = el.dataset.v; k.updated_at = now();
       persist(); renderTicker();
       el.parentElement.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b === el)));
+      break;
+    }
+    case 'tk-clear': { // 기간(항상) 또는 매일 시간대(종일) 지우기
+      const k = tickerById(id);
+      if (!k) break;
+      const fs = el.dataset.v === 'date' ? ['start_date', 'expire_date'] : ['daily_from', 'daily_to'];
+      fs.forEach(f => { k[f] = null; const inp = el.closest('.tw')?.querySelector(`[data-kf="${f}"]`); if (inp) inp.value = ''; });
+      k.updated_at = now(); persist(); renderTicker(); updateTickerRow(k);
+      toast(el.dataset.v === 'date' ? '기간을 지웠습니다 — 켜 두는 동안 항상 표시' : '시간대를 지웠습니다 — 하루 종일 표시');
       break;
     }
     case 'tk-del': {
