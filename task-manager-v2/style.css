@@ -382,6 +382,13 @@ button.dc:hover i{border-color:var(--dc-on)}
 .cd:disabled i{border-color:var(--line2)}
 .cd:disabled b{color:var(--muted)}
 
+/* 마감 변경 이력 (V7.5): 상세 본문 맨 끝, 생성·수정 일시와 같은 작은 회색 글씨로 한 줄씩 */
+.duehist{margin:2px 0 0;font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.duehist .hd{display:block;margin-bottom:2px}
+.duehist ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px}
+.duehist li{display:flex;flex-wrap:wrap;gap:0 8px}
+.duehist .dd{color:var(--muted)}
+.duehist .dd.late{color:var(--u-urgent)}
 .tsfoot{display:flex;flex-wrap:wrap;gap:2px 12px;margin:4px 0 0;font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
 @media (prefers-reduced-motion:reduce){.ah .ic{transition:none}}
 

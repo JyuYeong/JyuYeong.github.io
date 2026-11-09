@@ -312,7 +312,7 @@ export function tsFootHtml(t) {
   return [['생성', t.created_at], ['수정', t.updated_at], ['완료', t.status === 'done' ? t.completed_at : null]]
     .filter(([, v]) => fmtTs(v)).map(([l, v]) => `<span>${l} ${fmtTs(v)}</span>`).join('');
 }
-// 마감 변경 이력 (V5.8): 최근 것이 위. 날짜가 바뀐 경우 며칠 미뤘는지/당겼는지 함께
+// 마감 변경 이력 (V5.8, V7.5에서 하단 고정 줄 → 본문 맨 끝으로): 최근 것이 위. 날짜가 바뀐 경우 며칠 미뤘는지/당겼는지 함께
 function dueTxt(k) {
   if (!k) return '없음';
   const [d, tm] = k.split(' ');
@@ -327,7 +327,7 @@ export function dueHistHtml(t) {
     const delta = n ? `<span class="dd${n > 0 ? ' late' : ''}">${n > 0 ? '+' : '−'}${Math.abs(n)}일</span>` : '';
     return `<li><span class="at">${fmtTs(e.at)}</span><span class="ch">${esc(dueTxt(e.from))} → ${esc(dueTxt(e.to))}</span>${delta}</li>`;
   }).join('');
-  return `<div class="duehist"><span class="hd">마감 변경 ${h.length}회</span><ul>${rows}</ul></div>`;
+  return `<div class="duehist"><span class="hd">마감 변경 ${h.length}회</span><ul>${rows}</ul></div>`; // 상세 본문 맨 끝(스크롤 영역), 생성·수정 일시처럼 작게
 }
 function seg(field, options, cur, cls = '') {
   return `<div class="seg ${cls}" role="group">${options.map(([v, l]) => `<button type="button" data-act="set-${field}" data-v="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div>`;
@@ -395,8 +395,9 @@ function panelHtml(t) {
     </section>
 
     <section class="psec" id="logSec">${timelineHtml(t)}</section>
+    ${dueHistHtml(t)}
   </div>
-  <div class="pf">${dueHistHtml(t)}<p class="tsfoot" id="tsFoot">${tsFootHtml(t)}</p><button class="del" data-act="delete" data-id="${t.id}">${ic('trash')}삭제</button><button class="btn sm primary addlog" data-act="log-new">${ic('plus')}이력</button></div>`;
+  <div class="pf"><p class="tsfoot" id="tsFoot">${tsFootHtml(t)}</p><button class="del" data-act="delete" data-id="${t.id}">${ic('trash')}삭제</button><button class="btn sm primary addlog" data-act="log-new">${ic('plus')}이력</button></div>`;
 }
 // 확인 대기 상자: 성질(완료 확인 대기 / 일시 정지 중) + 판단일(선택)
 function reviewBoxHtml(t, now) {
