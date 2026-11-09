@@ -14,6 +14,8 @@ const BUCKETS = [['all', '전체'], ['todo', '대기'], ['in_progress', '진행 
 const STALE_DAYS = 7;
 const dot = l => `<span class="dot" style="background:${l ? esc(l.color) : 'var(--dot)'}"></span>`;
 const md = d => { const [y, m, dd] = d.split('-'); return `${y === S.todayKST().slice(0, 4) ? '' : y.slice(2) + '/'}${+m}/${+dd}`; };
+// 라벨·주제 보기 줄의 마감 표기 (V7.6): 오늘·내일은 말로, 그 외는 날짜
+const dueText = (d, today) => { const n = S.dayDiff(today, d); return n === 0 ? '오늘' : n === 1 ? '내일' : md(d); };
 const tasksOfLabel = id => liveTasks().filter(t => (id === 'none' ? !S.taskLabels(doc(), t).length : t.label_ids.includes(id)));
 const tasksOfTopic = g => liveTasks().filter(t => S.taskTopics(doc(), t).some(x => x.id === g.id));
 const ORDER = ['delayed', 'in_progress', 'todo', 'review', 'done', 'canceled'];
@@ -39,7 +41,7 @@ function taskRow(t, now, { showLabels = true, topicsOf = null } = {}) {
     ${tps.length ? `<span class="tps">${tps.map(g => `<span class="tpg${g.archived ? ' arch' : ''}" title="주제: ${esc(g.name)}">${ic('tag')}${esc(g.name)}</span>`).join('')}</span>` : ''}
     ${reviewBadge(t, now.date)}
     ${showLabels ? `<span class="tl3">${ls.map(dot).join('')}</span>` : ''}
-    <span class="tm">${t.due_date ? `<span class="${ds === 'delayed' ? 'late' : ''}">마감 ${md(t.due_date)}</span>` : ''}${sm ? `<span class="${sm.warn ? 'warn' : ''}">${esc(sm.text)}</span>` : last && !S.isFin(t) && !S.isReview(t) ? `<span>최근 ${md(last)}</span>` : ''}</span>
+    <span class="tm">${t.due_date ? `<span class="${ds === 'delayed' ? 'late' : ''}">마감 ${dueText(t.due_date, now.date)}</span>` : ''}${sm ? `<span class="${sm.warn ? 'warn' : ''}">${esc(sm.text)}</span>` : last && !S.isFin(t) && !S.isReview(t) ? `<span>최근 ${md(last)}</span>` : ''}</span>
   </article>`;
 }
 // 이력 모아 보기: Task 이력 + 라벨·주제에 직접 남긴 이력 (V5.5). "더 보기"로 늘린 개수는 화면을 옮기면 처음으로
